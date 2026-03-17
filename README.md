@@ -4,64 +4,14 @@
 This project aims to provide simple timing without an electronic timing board
 Please run this in 'python3.10'
 
+First change the paths in config.
+Put your WAV files in a folder, also change the paths in ESP.py
+Then run ./ESP.py
 
-altair==6.0.0
-attrs==25.4.0
-bidict==0.23.1
-blinker==1.9.0
-cachetools==7.0.5
-certifi==2026.2.25
-charset-normalizer==3.4.6
-click==8.3.1
-colorama==0.4.6
-dnspython==2.8.0
-et-xmlfile==2.0.0
-eventlet==0.40.4
 flask==3.1.3
-flask-socketio==5.6.1
-gitdb==4.0.12
-gitpython==3.1.46
-greenlet==3.3.2
-h11==0.16.0
-idna==3.11
-itsdangerous==2.2.0
-jinja2==3.1.6
-jsonschema==4.26.0
-jsonschema-specifications==2025.9.1
-markupsafe==3.0.3
-narwhals==2.18.0
 numpy==2.2.6
 openpyxl==3.1.5
-packaging==25.0
 pandas==2.3.3
-pillow==12.1.1
-pip==26.0.1
-protobuf==6.33.5
-pyarrow==23.0.1
-pydeck==0.9.1
 pygame==2.6.1
 pynput==1.8.1
-python-dateutil==2.9.0.post0
-python-engineio==4.13.1
-python-socketio==5.16.1
-pytz==2026.1.post1
 pyyaml==6.0.3
-referencing==0.37.0
-requests==2.32.5
-rpds-py==0.30.0
-setuptools==80.10.2
-simple-websocket==1.1.0
-six==1.17.0
-smmap==5.0.3
-streamlit==1.55.0
-tenacity==9.1.4
-toml==0.10.2
-tornado==6.5.5
-typing-extensions==4.15.0
-tzdata==2025.3
-urllib3==2.6.3
-v==1
-watchdog==6.0.0
-werkzeug==3.1.6
-wheel==0.46.3
-wsproto==1.3.2
