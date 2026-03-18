@@ -250,6 +250,13 @@ def handle_register(data):
     # 可以将客户端的sid与泳道关联，后续可定向广播
     print(f'Lane {lane} registered with sid {request.sid}')
 
+def get_test_latency():
+    """获取测试延迟函数"""
+    return test_latency
+
+def get_stop_timing():
+    """获取停止计时函数"""
+    return stop_timing
 
 def main():
     """主程序"""
@@ -263,8 +270,13 @@ def main():
         
         # 注册函数到共享模块
         shared_functions.register_functions(start_timing, test_latency, stop_timing)
-        
         print(f"[DEBUG] app.py: 函数已注册到shared_functions")
+        
+        # 检查函数是否成功注册
+        if shared_functions.is_functions_registered():
+            print("[DEBUG] app.py: 所有函数已成功注册")
+        else:
+            print("[DEBUG] app.py: 警告：部分函数未成功注册")
         
         # 导入ESP模块
         import ESP
@@ -272,8 +284,10 @@ def main():
         
         # 启动键盘监听
         ESP.start_keyboard_monitoring()
-        
         print("等待按键输入...")
+        print("按下1键: 播放音效1")
+        print("按下2键: 播放音效2")
+        print("按下3键: 播放音效3")
         print("按下4键: 播放音效 + 开始计时")
         print("按下5键: 播放音效 + 测试延迟")
         print("按下Ctrl+C退出程序")
@@ -285,6 +299,7 @@ def main():
     except ImportError as e:
         print(f"警告：无法导入模块: {e}")
         print("将使用键盘输入模拟")
+        
         # 使用原有的键盘输入方式
         print("程序已启动，等待按键输入...")
         print("按下4键: 开始计时")
@@ -294,7 +309,6 @@ def main():
         try:
             while True:
                 key = input("请输入按键(4/5/q退出): ").strip()
-                
                 if key == '4':
                     start_timing()
                 elif key == '5':
@@ -304,14 +318,12 @@ def main():
                     break
                 else:
                     print("无效输入，请按4、5或q")
-                    
         except KeyboardInterrupt:
             stop_timing()
             print("\n程序已退出")
             
     except KeyboardInterrupt:
         print("\n正在停止程序...")
-        
     finally:
         # 停止计时（如果正在运行）
         stop_timing()

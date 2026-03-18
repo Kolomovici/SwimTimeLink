@@ -11,6 +11,10 @@ import sys
 import os
 import traceback
 from datetime import datetime
+import time
+import app
+import shared_functions
+
 
 # 添加当前目录到 Python 路径，确保可以导入 excel_writer
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -71,6 +75,25 @@ def generate_test_data_variants():
     test_cases.update(edge_cases)
     
     return test_cases
+
+def test_key_press(key):
+    """模拟按键按下"""
+    print(f"\n=== 测试按键 {key} ===")
+    
+    if key == 4:
+        func = shared_functions.get_start_timing()
+        if func:
+            func()
+        else:
+            print("错误：开始计时函数未注册")
+            
+    elif key == 5:
+        func = shared_functions.get_test_latency()
+        if func:
+            func()
+        else:
+            print("错误：测试延迟函数未注册")
+
 
 def dataframe_to_excel_bytes(df):
     """将 DataFrame 转换为 Excel 字节流"""
@@ -298,6 +321,23 @@ def interactive_test():
             print("❌ 无效选项，请重新选择")
 
 if __name__ == "__main__":
+    print("开始测试ESP按键功能...")
+    
+    # 测试按键4（开始计时）
+    test_key_press(4)
+    time.sleep(2)
+    
+    # 测试按键5（测试延迟）
+    test_key_press(5)
+    time.sleep(2)
+    
+    # 测试停止计时
+    stop_func = shared_functions.get_stop_timing()
+    if stop_func:
+        stop_func()
+    else:
+        print("错误：停止计时函数未注册")
+        
     print("🔧 Excel Writer 测试工具")
     print("=" * 40)
     

@@ -26,10 +26,10 @@ SOUND_FILES = {
     '2': 'second_whistle.wav',
     '3': 'take_your_mark.wav',
     '4': 'start.wav',
-    '5': 'test.wav'
+    '5': 'man.wav'
 }
 
-# 加载音效
+# 加载音效112355
 sounds = {}
 for key, filename in SOUND_FILES.items():
     filepath = os.path.join(SOUND_DIR, filename)
