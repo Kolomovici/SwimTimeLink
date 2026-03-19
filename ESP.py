@@ -75,12 +75,11 @@ def on_press(key):
         # 处理数字键1~5（音效控制）
         if key.char in ('1', '2', '3', '4', '5'):
             print(f"[DEBUG] ESP.py: 检测到按键 {key.char}")
-            
             # 播放对应音效（非阻塞）
             sounds[key.char].play()
             print(f"[DEBUG] ESP.py: 播放音效 {key.char}")
             
-            # 如果是按键3，计时器变红
+            # 按键3的特殊处理：计时器变红
             if key.char == '3':
                 print(f"[DEBUG] ESP.py: 按键3按下 - 计时器变红")
                 if TIMER_AVAILABLE and timer:
@@ -89,28 +88,18 @@ def on_press(key):
                         print("[计时器] 颜色: 红色")
                     except Exception as e:
                         print(f"[计时器] 设置红色失败: {e}")
-                
-            # 如果是按键4，计时器变绿并开始计时
+            
+            # 按键4的特殊处理：原有的shared_functions调用
             elif key.char == '4':
                 print(f"[DEBUG] ESP.py: 按键4按下")
-                
                 # 原有的shared_functions调用
                 try:
                     from shared_functions import start_timing
                     start_timing()
                 except ImportError:
                     print("[DEBUG] ESP.py: 无法导入start_timing函数")
-                
-                # 计时器控制：按键4时计时器变绿并开始计时
-                if TIMER_AVAILABLE and timer:
-                    try:
-                        timer.set_color("green")
-                        timer.start_timer()
-                        print("[计时器] 颜色: 绿色，开始计时")
-                    except Exception as e:
-                        print(f"[计时器] 开始计时失败: {e}")
-                    
-            # 如果是按键5，尝试调用app函数
+            
+            # 按键5的特殊处理：延迟测试
             elif key.char == '5':
                 print(f"[DEBUG] ESP.py: 按键5按下")
                 if SHARED_MODULE_AVAILABLE:
@@ -127,23 +116,23 @@ def on_press(key):
                 else:
                     print(f"[DEBUG] ESP.py: shared_functions模块不可用")
         
-        # ==================== 附加计时器控制按键 ====================
-        # 按键 't' 或 'T': 计时器变红（备用）
+        # ==================== 计时器控制按键（独立按键） ====================
+        # 按键 't' 或 'T': 计时器变红
         elif key.char in ('t', 'T'):
             if TIMER_AVAILABLE and timer:
                 try:
                     timer.set_color("red")
-                    print("[计时器] 颜色: 红色 (备用按键)")
+                    print("[计时器] 颜色: 红色")
                 except Exception as e:
                     print(f"[计时器] 设置红色失败: {e}")
         
-        # 按键 'g' 或 'G': 计时器变绿并开始计时（备用）
-        elif key.char in ('g', 'G'):
+        # 按键 'g' 或 'G': 计时器变绿并开始计时
+        elif key.char in ('4'):
             if TIMER_AVAILABLE and timer:
                 try:
                     timer.set_color("green")
                     timer.start_timer()
-                    print("[计时器] 颜色: 绿色，开始计时 (备用按键)")
+                    print("[计时器] 颜色: 绿色，开始计时")
                 except Exception as e:
                     print(f"[计时器] 开始计时失败: {e}")
         
@@ -181,8 +170,36 @@ def on_press(key):
                         print("[计时器] 窗口未初始化")
                 except Exception as e:
                     print(f"[计时器] 切换窗口失败: {e}")
+        
+        # 按键 'd' 或 'D': 延迟测试（独立按键）
+        elif key.char in ('d', 'D'):
+            print(f"[DEBUG] ESP.py: 延迟测试按键按下")
+            if SHARED_MODULE_AVAILABLE:
+                test_func = shared_functions.get_test_latency()
+                if test_func:
+                    print(f"[DEBUG] ESP.py: 从shared_functions获取到test_latency函数")
+                    # 在新线程中执行，避免阻塞音效播放
+                    threading.Thread(
+                        target=test_func,
+                        daemon=True
+                    ).start()
+                else:
+                    print(f"[DEBUG] ESP.py: shared_functions中没有test_latency函数")
+            else:
+                print(f"[DEBUG] ESP.py: shared_functions模块不可用")
+        
+        # 按键 'x' 或 'X': 启动计时（独立按键）
+        elif key.char in ('x', 'X'):
+            print(f"[DEBUG] ESP.py: 启动计时按键按下")
+            # 原有的shared_functions调用
+            try:
+                from shared_functions import start_timing
+                start_timing()
+            except ImportError:
+                print("[DEBUG] ESP.py: 无法导入start_timing函数")
+        
         # ===================================================
-                
+        
     except AttributeError:
         # 非字符键（如功能键）忽略
         pass
@@ -209,22 +226,21 @@ def main():
     print("="*60)
     print("电子发令枪已启动。")
     print("="*60)
-    
     print("音效控制：")
     print("  1 - 四声短哨")
     print("  2 - 一声长哨")
     print("  3 - take your mark (同时计时器变红)")
-    print("  4 - 电笛声 (同时开始计时)")
+    print("  4 - 电笛声 (同时启动计时)")
     print("  5 - 延迟测试")
     
     print("\n计时器控制：")
-    print("  3 - 计时器变红")
-    print("  4 - 计时器变绿并开始计时")
+    print("  t/T - 计时器变红")
+    print("  g/G - 计时器变绿并开始计时")
     print("  s/S - 停止计时")
     print("  r/R - 重置计时器")
     print("  w/W - 显示/隐藏计时窗口")
-    print("  t/T - 计时器变红 (备用)")
-    print("  g/G - 计时器变绿并开始计时 (备用)")
+    print("  d/D - 延迟测试 (独立按键)")
+    print("  x/X - 启动计时 (独立按键)")
     
     print("\n按 Ctrl+C 退出程序。")
     print("="*60)
@@ -247,10 +263,9 @@ def main():
             TIMER_AVAILABLE = False
     else:
         print("计时器功能不可用")
-
+    
     # 启动键盘监听
     listener = start_keyboard_monitoring()
-    
     if not listener:
         print("无法启动键盘监听，程序退出")
         pygame.mixer.quit()
