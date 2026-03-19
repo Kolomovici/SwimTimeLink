@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>泳池发令·裁判长控制台</title>
+    <style>
+        * { box-sizing: border-box; font-family: 'Segoe UI', sans-serif; }
+        body { background: #0b1a2f; margin: 0; padding: 16px; display: flex; justify-content: center; }
+        .dashboard { max-width: 1400px; width: 100%; background: #edf2f9; border-radius: 36px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.6); }
+        .header { background: linear-gradient(145deg,#0b2b44,#051a2c); padding: 20px 32px; display: flex; align-items: center; justify-content: space-between; border-bottom: 3px solid #2a80b9; }
+        .header h1 { margin:0; color:white; font-weight:500; font-size:2rem; display: flex; align-items: center; gap:10px; }
+        .server-status { background: #0f344d; color: #7ec8ff; padding: 10px 22px; border-radius: 60px; display: flex; align-items: center; gap: 8px; }
+        .status-led { width: 14px; height: 14px; border-radius: 14px; background: #aaa; box-shadow: 0 0 5px; margin-right: 6px; }
+        .status-led.online { background: #25b825; box-shadow: 0 0 8px #3aff3a; }
+        .main-grid { display: grid; grid-template-columns: 380px 1fr 320px; gap: 18px; padding: 22px; background: #d9e2ef; }
+        .card { background: rgba(255,255,255,0.85); backdrop-filter: blur(8px); border-radius: 28px; padding: 20px 18px; box-shadow: 0 12px 28px -8px rgba(0,35,60,0.3); border: 1px solid #c3d5e8; }
+        .card-title { font-size:1.3rem; font-weight:600; margin-bottom:18px; color:#113750; border-left:6px solid #2a80b9; padding-left:16px; display:flex; align-items:center; gap:8px; }
+        .form-row { display: flex; flex-direction: column; gap:4px; margin-bottom:12px; }
+        .form-row label { font-weight:600; color:#1a4463; font-size:0.9rem; text-transform: uppercase; }
+        .form-row input, .form-row select { background: white; border:1px solid #b6cbe2; border-radius:40px; padding:12px 18px; font-size:1rem; outline:none; }
+        .button-primary { background: #145c8f; border:none; border-radius:40px; padding:14px 18px; font-weight:700; color:white; cursor:pointer; box-shadow:0 6px 0 #0a2e48; transition:0.08s linear; margin-top:8px; }
+        .button-primary:active { transform:translateY(5px); box-shadow:0 1px 0 #0a2e48; }
+        .button-small { background:#305f83; border:none; color:white; padding:8px 18px; border-radius:40px; font-weight:600; cursor:pointer; box-shadow:0 3px 0 #173e59; }
+        .button-small:active { transform:translateY(3px); box-shadow:none; }
+        .toggle-group { display:flex; background:#b7cfdf; border-radius:40px; padding:4px; margin:12px 0; }
+        .toggle-option { flex:1; text-align:center; padding:8px 0; border-radius:30px; font-weight:600; color:#1c4c73; cursor:pointer; border:none; background:transparent; }
+        .toggle-option.active { background:#14639c; color:white; box-shadow:0 2px 6px #00000040; }
+        .cloud-config { display:flex; flex-direction:column; gap:12px; margin-top:16px; }
+        .cloud-config .form-row { flex-direction:row; align-items:center; gap:8px; }
+        .cloud-config .form-row label { width:70px; }
+        .athlete-list { max-height:250px; overflow-y:auto; background:#ffffffb0; border-radius:24px; padding:6px 4px; margin-top:10px; }
+        .athlete-item { display:flex; justify-content:space-between; padding:10px 16px; border-bottom:1px dashed #9cb9d3; cursor:pointer; }
+        .athlete-item:hover { background:#cbdbe9; }
+        .athlete-name { font-weight:600; color:#003057; }
+        .athlete-lane { background:#284b6e; color:white; border-radius:30px; padding:2px 12px; font-size:0.8rem; }
+        .qrcode-grid { display:grid; grid-template-columns: repeat(4,1fr); gap:8px; margin-top:15px; }
+        .qrcode-cell { text-align:center; background:#fff; border-radius:16px; padding:8px; }
+        .qrcode-cell canvas { width:80px; height:80px; }
+        .data-table-wrapper { background:#ffffffc0; border-radius:24px; padding:4px; overflow-x:auto; }
+        table { width:100%; border-collapse:collapse; font-size:0.9rem; }
+        th { background:#1a4b73; color:white; padding:14px 6px; font-weight:500; }
+        td { padding:12px 6px; border-bottom:1px solid #b7cde0; text-align:center; color:#05273c; }
+        .footer-bar { background:#113750; color:#c5deff; padding:12px 32px; display:flex; justify-content:space-between; align-items:center; font-size:0.95rem; border-top:1px solid #2e6190; }
+        .error-message { color: #ff4444; font-size: 0.9rem; margin-top: 4px; display: none; }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/qrcode.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body>
+<div class="dashboard">
+    <div class="header">
+        <h1>⏱️ 裁判长控制台</h1>
+        <div class="server-status" id="serverStatus">
+            <span class="status-led" id="statusLed"></span>
+            <span id="statusText">未连接</span>
+        </div>
+    </div>
+
+    <div class="main-grid">
+        <!-- 左侧：服务器配置 -->
+        <div class="card">
+            <div class="card-title">🔧 服务器配置</div>
+            <div class="cloud-config">
+                <div class="form-row">
+                    <label>IP/域名</label>
+                    <input type="text" id="serverAddr" placeholder="192.168.1.100" value="">
+                </div>
+                <div class="form-row">
+                    <label>端口</label>
+                    <input type="text" id="serverPort" placeholder="5000" value="5000">
+                </div>
+                <div style="display:flex; gap:8px;">
+                    <button class="button-small" id="connectServerBtn">🔌 连接</button>
+                    <button class="button-small" id="disconnectServerBtn">断开</button>
+                </div>
+                <div id="connectError" class="error-message"></div>
+            </div>
+        </div>
+
+        <!-- 中列：比赛控制 -->
+        <div class="card">
+            <div class="card-title">🎯 比赛控制</div>
+            <div class="form-row">
+                <label>比赛项目</label>
+                <select id="eventSelect">
+                    <option value="50自" data-laps="1">50米自由泳 (1段)</option>
+                    <option value="100蛙" data-laps="2">100米蛙泳 (2段)</option>
+                    <option value="200混" data-laps="4">200米混合泳 (4段)</option>
+                    <option value="400自" data-laps="8" selected>400米自由泳 (8段)</option>
+                </select>
+            </div>
+            <div class="form-row">
+                <label>分段数</label>
+                <input type="number" id="lapsCount" readonly value="8">
+            </div>
+            <button class="button-primary" id="startRaceBtn" disabled>🚦 发令</button>
+            <div style="margin-top:20px;">
+                <div class="card-title">📱 泳道二维码</div>
+                <div class="qrcode-grid" id="qrcodeGrid"></div>
+            </div>
+        </div>
+
+        <!-- 右侧：实时成绩表 -->
+        <div class="card">
+            <div class="card-title">📊 实时成绩</div>
+            <div class="data-table-wrapper">
+                <table id="scoreTable">
+                    <thead>
+                        <tr><th>泳道</th><th>分段1</th><th>分段2</th><th>分段3</th><th>分段4</th><th>分段5</th><th>分段6</th><th>分段7</th><th>分段8</th></tr>
+                    </thead>
+                    <tbody id="tableBody"></tbody>
+                </table>
+            </div>
+            <div style="display:flex; justify-content:space-between; margin-top:18px;">
+                <button class="button-small" id="refreshScoresBtn">🔄 刷新成绩</button>
+                <button class="button-small" id="clearTableBtn">🧹 清空表格</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer-bar">
+        <div><span class="status-led" id="footerLed"></span> 系统状态: <span id="footerStatus">等待连接</span></div>
+        <div id="lastCommandTime">最后发令: --:--:--</div>
+        <div>⚡ 服务器时间: <span id="serverTimeDisplay">--</span></div>
+    </div>
+</div>
+
+<script>
+(function() {
+    // 全局变量
+    let socket = null;
+    let serverBaseUrl = '';
+    let connected = false;
+    let eventLaps = 8;
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 5;
+    let heartbeatInterval = null;
+    let reconnectTimer = null;
+
+    // UI元素
+    const serverAddrInput = document.getElementById('serverAddr');
+    const serverPortInput = document.getElementById('serverPort');
+    const connectBtn = document.getElementById('connectServerBtn');
+    const disconnectBtn = document.getElementById('disconnectServerBtn');
+    const statusLed = document.getElementById('statusLed');
+    const statusText = document.getElementById('statusText');
+    const footerLed = document.getElementById('footerLed');
+    const footerStatus = document.getElementById('footerStatus');
+    const serverTimeDisplay = document.getElementById('serverTimeDisplay');
+    const startRaceBtn = document.getElementById('startRaceBtn');
+    const eventSelect = document.getElementById('eventSelect');
+    const lapsCount = document.getElementById('lapsCount');
+    const refreshScoresBtn = document.getElementById('refreshScoresBtn');
+    const clearTableBtn = document.getElementById('clearTableBtn');
+    const tableBody = document.getElementById('tableBody');
+    const qrcodeGrid = document.getElementById('qrcodeGrid');
+    const lastCommandTime = document.getElementById('lastCommandTime');
+    const connectError = document.getElementById('connectError');
+
+    // 设置服务器状态
+    function setServerStatus(online, msg) {
+        connected = online;
+        if (online) {
+            statusLed.className = 'status-led online';
+            footerLed.className = 'status-led online';
+            statusText.innerText = msg || '已连接';
+            footerStatus.innerText = '已连接';
+            startRaceBtn.disabled = false;
+            connectError.style.display = 'none';
+            reconnectAttempts = 0;
+        } else {
+            statusLed.className = 'status-led';
+            footerLed.className = 'status-led';
+            statusText.innerText = msg || '未连接';
+            footerStatus.innerText = msg || '未连接';
+            startRaceBtn.disabled = true;
+        }
+    }
+
+    // 获取成绩
+    function fetchScores() {
+        if (!connected || !serverBaseUrl) return;
+        fetch(`${serverBaseUrl}/scores`)
+            .then(res => {
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                return res.json();
+            })
+            .then(data => {
+                renderScoreTable(data.scores || {});
+            })
+            .catch(err => {
+                console.error('获取成绩失败:', err);
+            });
+    }
+
+    // 渲染成绩表格（修复分段数变化时显示错误）
+    function renderScoreTable(scores) {
+        if (!scores) {
+            console.warn('成绩数据为空');
+            scores = {};
+        }
+        
+        tableBody.innerHTML = '';
+        const lanes = [1,2,3,4,5,6,7,8];
+        const maxSegments = eventLaps || 8;
+        
+        lanes.forEach(lane => {
+            const row = document.createElement('tr');
+            const laneScores = scores[lane] || [];
+            
+            let cells = `<td>${lane}道</td>`;
+            for (let i = 0; i < maxSegments; i++) {
+                if (laneScores[i] && !isNaN(laneScores[i])) {
+                    const timeInSeconds = (laneScores[i] / 1000).toFixed(2);
+                    cells += `<td>${timeInSeconds}</td>`;
+                } else {
+                    cells += `<td>--</td>`;
+                }
+            }
+            // 补齐剩余列（保持表格结构统一）
+            for (let i = maxSegments; i < 8; i++) {
+                cells += `<td>-</td>`;
+            }
+            row.innerHTML = cells;
+            tableBody.appendChild(row);
+        });
+    }
+
+    // 更新服务器时间
+    function updateServerTime() {
+        if (!connected || !serverBaseUrl) return;
+        fetch(`${serverBaseUrl}/sync`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lane: 0 })
+        })
+            .then(res => {
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                return res.json();
+            })
+            .then(data => {
+                if (data.server_time) {
+                    const d = new Date(data.server_time);
+                    serverTimeDisplay.innerText = d.toLocaleTimeString('en-US', { 
+                        hour12: false, 
+                        hour: '2-digit', 
+                        minute:'2-digit', 
+                        second:'2-digit'
+                    });
+                }
+            })
+            .catch(err => {
+                console.error('更新时间失败:', err);
+            });
+    }
+
+    // 心跳检测
+    function startHeartbeat() {
+        if (heartbeatInterval) clearInterval(heartbeatInterval);
+        
+        heartbeatInterval = setInterval(() => {
+            if (connected && socket && socket.connected) {
+                socket.emit('ping', { time: Date.now() });
+            } else if (connected && (!socket || !socket.connected)) {
+                // WebSocket断开但connected标志仍为true，尝试重连
+                setServerStatus(false, '连接断开');
+                attemptReconnect();
+            }
+        }, 30000);
+    }
+
+    // 尝试重连
+    function attemptReconnect() {
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        
+        if (reconnectAttempts < maxReconnectAttempts) {
+            reconnectAttempts++;
+            footerStatus.innerText = `重连中 (${reconnectAttempts}/${maxReconnectAttempts})`;
+            
+            reconnectTimer = setTimeout(() => {
+                if (!connected && serverBaseUrl) {
+                    connectWebSocket();
+                }
+            }, 3000 * reconnectAttempts); // 递增重连延迟
+        } else {
+            footerStatus.innerText = '重连失败';
+            connectError.innerText = '无法连接到服务器，请手动重连';
+            connectError.style.display = 'block';
+        }
+    }
+
+    // 连接WebSocket（修复错误处理和重连）
+    function connectWebSocket() {
+        if (socket) {
+            socket.removeAllListeners();
+            socket.disconnect();
+            socket = null;
+        }
+
+        try {
+            socket = io(serverBaseUrl, {
+                transports: ['websocket', 'polling'],
+                reconnection: false, // 手动控制重连
+                timeout: 10000
+            });
+
+            socket.on('connect', () => {
+                console.log('WebSocket connected');
+                setServerStatus(true, '已连接');
+                fetchScores();
+                startHeartbeat();
+            });
+
+            socket.on('disconnect', (reason) => {
+                console.log('WebSocket disconnected:', reason);
+                if (connected) {
+                    setServerStatus(false, '断开');
+                    attemptReconnect();
+                }
+            });
+
+            socket.on('connect_error', (error) => {
+                console.error('WebSocket连接错误:', error);
+                connectError.innerText = '连接错误: ' + error.message;
+                connectError.style.display = 'block';
+                if (connected) {
+                    setServerStatus(false, '连接错误');
+                    attemptReconnect();
+                }
+            });
+
+            socket.on('score_update', () => {
+                fetchScores();
+            });
+
+        } catch (err) {
+            console.error('创建WebSocket失败:', err);
+            connectError.innerText = '创建连接失败: ' + err.message;
+            connectError.style.display = 'block';
+        }
+    }
+
+    // 生成二维码
+    function generateQRCodes() {
+        if (!serverBaseUrl) return;
+        const baseUrl = window.location.origin + window.location.pathname.replace('head_judgment_1.1.html', 'judgment_1.1.html');
+        qrcodeGrid.innerHTML = '';
+        
+        for (let lane = 1; lane <= 8; lane++) {
+            const cell = document.createElement('div');
+            cell.className = 'qrcode-cell';
+            const canvas = document.createElement('canvas');
+            const url = `${baseUrl}?server=${encodeURIComponent(serverBaseUrl)}&lane=${lane}`;
+            
+            try {
+                QRCode.toCanvas(canvas, url, { width: 80 }, (err) => {
+                    if (err) console.error('生成二维码失败:', err);
+                });
+            } catch (err) {
+                console.error('二维码生成错误:', err);
+            }
+            
+            cell.appendChild(canvas);
+            cell.innerHTML += `<div>${lane}道</div>`;
+            qrcodeGrid.appendChild(cell);
+        }
+    }
+
+    // 连接服务器（修复错误处理）
+    connectBtn.addEventListener('click', () => {
+        const addr = serverAddrInput.value.trim();
+        const port = serverPortInput.value.trim();
+        
+        connectError.style.display = 'none';
+        connectError.innerText = '';
+        
+        if (!addr) {
+            connectError.innerText = '请输入服务器IP或域名';
+            connectError.style.display = 'block';
+            return;
+        }
+        
+        serverBaseUrl = `http://${addr}:${port}`;
+        setServerStatus(false, '连接中...');
+        
+        // 先测试HTTP连接
+        fetch(`${serverBaseUrl}/sync`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lane: 0 }),
+            timeout: 5000
+        })
+            .then(res => {
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                return res.json();
+            })
+            .then(data => {
+                if (data.server_time) {
+                    setServerStatus(true, '已连接');
+                    connectWebSocket();
+                    generateQRCodes();
+                    setInterval(updateServerTime, 5000);
+                    updateServerTime();
+                    fetchScores();
+                } else {
+                    throw new Error('服务器返回数据格式错误');
+                }
+            })
+            .catch(err => {
+                console.error('连接失败:', err);
+                setServerStatus(false, '连接失败');
+                connectError.innerText = '连接失败: ' + err.message;
+                connectError.style.display = 'block';
+                serverBaseUrl = '';
+            });
+    });
+
+    disconnectBtn.addEventListener('click', () => {
+        if (socket) {
+            socket.removeAllListeners();
+            socket.disconnect();
+            socket = null;
+        }
+        if (heartbeatInterval) {
+            clearInterval(heartbeatInterval);
+            heartbeatInterval = null;
+        }
+        if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+        }
+        setServerStatus(false, '已断开');
+        serverBaseUrl = '';
+        qrcodeGrid.innerHTML = '';
+        reconnectAttempts = 0;
+        connectError.style.display = 'none';
+    });
+
+    // 项目选择（修复分段数同步）
+    eventSelect.addEventListener('change', (e) => {
+        const opt = e.target.selectedOptions[0];
+        const laps = parseInt(opt.getAttribute('data-laps')) || 1;
+        lapsCount.value = laps;
+        eventLaps = laps;
+        // 分段数变化时重新渲染表格
+        if (connected) {
+            fetchScores();
+        }
+    });
+
+    // 发令（修复错误处理）
+    startRaceBtn.addEventListener('click', () => {
+        if (!connected || !socket || !socket.connected) {
+            alert('服务器未连接或连接已断开');
+            return;
+        }
+        
+        const projectName = eventSelect.value;
+        const segments = eventLaps;
+        
+        fetch(`${serverBaseUrl}/start`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                project: projectName,
+                segments: segments
+            })
+        })
+        .then(res => {
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.json();
+        })
+        .then(data => {
+            if (data.start_time) {
+                const time = new Date(data.start_time).toLocaleTimeString();
+                lastCommandTime.innerText = `最后发令: ${time}`;
+                alert('发令成功');
+                // 清空旧成绩
+                renderScoreTable({});
+            } else {
+                alert('发令失败: ' + (data.message || '未知错误'));
+            }
+        })
+        .catch(err => {
+            console.error('发令失败:', err);
+            alert('发令失败: ' + err.message);
+        });
+    });
+
+    // 刷新成绩
+    refreshScoresBtn.addEventListener('click', fetchScores);
+
+    // 清空表格（仅前端）
+    clearTableBtn.addEventListener('click', () => {
+        if (confirm('确定清空表格显示吗？这不会删除服务器上的成绩数据。')) {
+            tableBody.innerHTML = '<tr><td colspan="9" style="padding:30px;">暂无成绩</td></tr>';
+        }
+    });
+
+    // 页面卸载时清理
+    window.addEventListener('beforeunload', () => {
+        if (heartbeatInterval) {
+            clearInterval(heartbeatInterval);
+        }
+        if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+        }
+        if (socket) {
+            socket.removeAllListeners();
+            socket.disconnect();
+        }
+    });
+})();
+</script>
+</body>
+</html>

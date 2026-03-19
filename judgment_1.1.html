@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>泳道计时器</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        font-family: "Segoe UI", Roboto, sans-serif;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        background: #0a1e30;
+        min-height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 12px;
+      }
+      .phone-container {
+        max-width: 400px;
+        width: 100%;
+        background: #e3ecf5;
+        border-radius: 48px;
+        box-shadow: 0 25px 50px -8px black;
+        overflow: hidden;
+        border: 2px solid #4a7b9f;
+      }
+      .status-bar {
+        background: #0b2b44;
+        color: white;
+        padding: 20px 24px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .lane-badge {
+        background: #f0b81e;
+        color: #1a3f5a;
+        font-weight: 800;
+        font-size: 1.8rem;
+        padding: 6px 24px;
+        border-radius: 60px;
+      }
+      .connection-led {
+        width: 14px;
+        height: 14px;
+        border-radius: 14px;
+        background: #aaa;
+        box-shadow: 0 0 8px;
+      }
+      .connection-led.online {
+        background: #2ecc2e;
+        box-shadow: 0 0 12px #00ff00;
+      }
+      .main-card {
+        padding: 24px 20px;
+      }
+      .info-panel {
+        background: #c9ddf2;
+        border-radius: 40px;
+        padding: 16px;
+        margin-bottom: 20px;
+        text-align: center;
+      }
+      .info-panel .event {
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: #003459;
+      }
+      .info-panel .status {
+        font-size: 1.2rem;
+        margin-top: 8px;
+        color: #1d5a8b;
+      }
+      .timer-buttons {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        gap: 12px;
+        margin-top: 20px;
+      }
+      .split-btn {
+        background: #1a5f9e;
+        border: none;
+        border-radius: 80px;
+        padding: 22px 12px;
+        font-size: 1.8rem;
+        font-weight: 700;
+        color: white;
+        box-shadow:
+          0 8px 0 #0a3150,
+          0 10px 20px rgba(0, 0, 0, 0.3);
+        transition: 0.05s linear;
+        cursor: pointer;
+      }
+      .split-btn:active {
+        transform: translateY(6px);
+        box-shadow:
+          0 2px 0 #0a3150,
+          0 10px 20px rgba(0, 0, 0, 0.2);
+      }
+      .split-btn.disabled {
+        background: #7f8c8d;
+        box-shadow: 0 8px 0 #4a5a5c;
+        pointer-events: none;
+        opacity: 0.6;
+      }
+      .split-btn.done {
+        background: #27ae60;
+        box-shadow: 0 8px 0 #1e8449;
+      }
+      .footer {
+        background: #113750;
+        color: #b0d4f0;
+        padding: 16px 24px;
+        font-size: 0.9rem;
+        display: flex;
+        justify-content: space-between;
+      }
+    </style>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  </head>
+  <body>
+    <div class="phone-container">
+      <div class="status-bar">
+        <span class="lane-badge" id="laneDisplay">-</span>
+        <div>
+          <div class="connection-led" id="connLed"></div>
+        </div>
+      </div>
+      <div class="main-card">
+        <div class="info-panel">
+          <div class="event" id="eventName">等待项目...</div>
+          <div class="status" id="raceStatus">⏳ 等待发令</div>
+        </div>
+        <div id="buttonContainer" class="timer-buttons">
+          <!-- 动态生成分段按钮 -->
+        </div>
+        <div style="margin-top: 20px; text-align: center; color: #1a4a73">
+          <span>时钟偏移: </span><span id="offsetDisplay">0 ms</span>
+        </div>
+      </div>
+      <div class="footer">
+        <span>服务器: <span id="serverDisplay">--</span></span>
+        <span id="timeDisplay">--:--:--</span>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        // 从URL获取参数
+        const urlParams = new URLSearchParams(window.location.search);
+        const lane = urlParams.get("lane") || "1";
+        let serverBaseUrl = urlParams.get("server") || "";
+        if (!serverBaseUrl) {
+          serverBaseUrl = localStorage.getItem("lastServer") || "";
+        }
+        if (!serverBaseUrl) {
+          alert("未指定服务器地址，请通过二维码扫描进入");
+        } else {
+          localStorage.setItem("lastServer", serverBaseUrl);
+        }
+
+        // 显示泳道号
+        document.getElementById("laneDisplay").innerText = lane;
+        document.getElementById("serverDisplay").innerText =
+          serverBaseUrl.replace(/^https?:\/\//, "");
+
+        // 全局变量
+        let socket = null;
+        let connected = false;
+        let raceActive = false;
+        let currentSplit = 0;
+        let totalLaps = 0;
+        let eventName = "";
+        let startTime = null;
+        let clockOffset = 0;
+        let syncInterval = null;
+
+        // UI元素
+        const connLed = document.getElementById("connLed");
+        const eventNameEl = document.getElementById("eventName");
+        const raceStatusEl = document.getElementById("raceStatus");
+        const buttonContainer = document.getElementById("buttonContainer");
+        const offsetDisplay = document.getElementById("offsetDisplay");
+        const timeDisplay = document.getElementById("timeDisplay");
+
+        // 时间同步
+        async function syncTime() {
+          if (!serverBaseUrl) return null;
+          const T1 = performance.now();
+          try {
+            const res = await fetch(`${serverBaseUrl}/sync`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ lane: parseInt(lane) })
+            });
+            const T4 = performance.now();
+            const data = await res.json();
+            const serverTime = data.server_time;
+            const RTT = T4 - T1;
+            const offset = serverTime - (T1 + RTT / 2);
+            clockOffset = offset;
+            offsetDisplay.innerText = offset.toFixed(2) + ' ms';
+            return offset;
+          } catch (e) {
+            console.warn("时间同步失败", e);
+            return null;
+          }
+        }
+
+        // 定期同步
+        function startSync(interval = 30000) {
+          syncTime();
+          if (syncInterval) clearInterval(syncInterval);
+          syncInterval = setInterval(syncTime, interval);
+        }
+
+        // 连接WebSocket
+        function connectWebSocket() {
+          if (!serverBaseUrl) return;
+          socket = io(serverBaseUrl, {
+            transports: ["websocket", "polling"],
+            query: { lane: lane }
+          });
+
+          socket.on("connect", () => {
+            console.log("WS connected");
+            connLed.className = "connection-led online";
+            connected = true;
+          });
+
+          socket.on("disconnect", () => {
+            console.log("WS disconnected");
+            connLed.className = "connection-led";
+            connected = false;
+          });
+
+          // 监听发令信号
+          socket.on("start", (data) => {
+            console.log("收到发令", data);
+            raceActive = true;
+            currentSplit = 0;
+            startTime = data.start_time;
+            eventName = data.project;
+            totalLaps = data.segments || 1;
+            eventNameEl.innerText = eventName;
+            raceStatusEl.innerText = "🏊 比赛中";
+            generateButtons(totalLaps);
+          });
+        }
+
+        // 生成分段按钮
+        function generateButtons(laps) {
+          buttonContainer.innerHTML = "";
+          for (let i = 0; i < laps; i++) {
+            const btn = document.createElement("button");
+            btn.className = "split-btn";
+            btn.innerText = `${(i + 1) * 50}m`;
+            btn.dataset.seg = i;
+            btn.addEventListener("click", () => handleSplitClick(i));
+            buttonContainer.appendChild(btn);
+          }
+        }
+
+        // 处理分段点击
+        function handleSplitClick(segIndex) {
+          if (!raceActive) {
+            alert("比赛尚未开始");
+            return;
+          }
+          if (segIndex !== currentSplit) {
+            if (segIndex < currentSplit) {
+              alert("该分段已记录");
+              return;
+            }
+          }
+          
+          const localTime = Date.now();
+          const serverTime = localTime + clockOffset;
+          
+          fetch(`${serverBaseUrl}/record`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              lane: parseInt(lane),
+              segment: segIndex + 1,
+              corrected_click_time: Math.round(serverTime)
+            })
+          })
+            .then((res) => res.json())
+            .then((data) => {
+              if (data.status === "ok") {
+                const btns = document.querySelectorAll(".split-btn");
+                if (btns[segIndex]) {
+                  btns[segIndex].classList.add("done");
+                }
+                if (segIndex === currentSplit) {
+                  currentSplit++;
+                }
+                if (currentSplit >= totalLaps) {
+                  raceActive = false;
+                  raceStatusEl.innerText = "✅ 比赛完成";
+                }
+              } else {
+                alert("上报失败: " + (data.message || "未知错误"));
+              }
+            })
+            .catch((err) => {
+              console.error(err);
+              alert("网络错误");
+            });
+        }
+
+        // 更新时间显示
+        function updateClock() {
+          const now = new Date();
+          timeDisplay.innerText = now.toLocaleTimeString("en-US", {
+            hour12: false,
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          });
+        }
+        setInterval(updateClock, 500);
+
+        // 初始化
+        if (serverBaseUrl) {
+          connectWebSocket();
+          startSync();
+        }
+      })();
+    </script>
+  </body>
+</html>
