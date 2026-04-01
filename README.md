@@ -10,3 +10,5 @@ Please run this in 'python3.10'
 *Put your WAV files in a folder, also change the paths in ESP.py
 
 Then run ./ESP.py (press'4',start the game;press '5' test the time relay)
+
+GenShin niubi
