@@ -1,5 +1,3 @@
-<img width="715" height="2010" alt="image" src="https://github.com/user-attachments/assets/385764b3-f9b8-4d90-bdd1-c07138bd30a9" /># SwimTimeLink 
-
 朋友们非常抱歉，因为"中国大学生游泳锦标赛 总决赛"的缘故,该项目开发团队无法到场支持湖南大学游泳校联赛，但是我们依然坚持将此项目开发完成！
 感谢NJAU(南京农业大学)前端的支持！期待与您们在中国大学生游泳锦标赛————鄂尔多斯相见！
 
