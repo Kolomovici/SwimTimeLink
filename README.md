@@ -16,3 +16,17 @@ Please run this in 'python3.10'
 Then run ./ESP.py (press'4',start the game;press '5' test the time relay)
 
 GenShin niubi
+
+cd D:\CS\SwimTimeLink
+
+# 运行全部测试（shared_functions + excel_writer）
+python test_main.py
+
+# 只测 shared_functions
+python test_main.py --module=sf
+
+# 只测 excel_writer
+python test_main.py --module=ex
+
+# 只测 API（需先启动 Flask 服务器）
+python test_main.py --module=api
