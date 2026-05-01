@@ -73,7 +73,9 @@ current_race = {
     "project_name": "",
     "segments": 0,
     "start_time": None,
-    "start_timestamp": None
+    "start_timestamp": None,
+    "ready": False,          # ESP是否已准备就绪（收到take your mark指令）
+    "esp_triggered": False   # ESP是否已实际触发发令（电笛声）
 }
 
 # 参赛选手信息: lane -> {name, number, team, ...}
@@ -192,21 +194,29 @@ def register_participant():
 
 @app.route('/start_race', methods=['POST'])
 def start_race():
-    """发令开始比赛"""
+    """
+    【裁判长点击发令】
+    不再直接开始比赛，而是：
+    1. 保存比赛信息（项目名、分段数）
+    2. 通知ESP.py执行发令流程（播放take your mark -> 等待 -> 播放电笛声）
+    3. ESP电笛声响起时，会调用 /esp_fire 记录真正的 start_time
+    """
     global current_race
     data = request.get_json()
     
     project_name = data.get('project_name', '游泳比赛')
     segments = data.get('segments', 1)
-    start_timestamp = int(time.time() * 1000)
     
     with lock:
+        # 保存比赛信息但不激活计时
         current_race = {
-            "active": True,
+            "active": False,
             "project_name": project_name,
             "segments": segments,
-            "start_time": start_timestamp,
-            "start_timestamp": start_timestamp
+            "start_time": None,
+            "start_timestamp": None,
+            "ready": False,
+            "esp_triggered": False
         }
         
         # 清空当前比赛成绩
@@ -218,7 +228,55 @@ def start_race():
         
         save_race_data()
     
-    # 广播发令信号
+    # 通知 ESP 开始发令流程
+    socketio.emit('esp_start_race', {
+        "project_name": project_name,
+        "segments": segments
+    })
+    
+    print(f"[裁判长] 发令指令已发送到ESP: {project_name}, 分段数: {segments}")
+    
+    return jsonify({
+        "status": "ok",
+        "message": "发令信号已发送到ESP，等待ESP执行发令流程"
+    })
+
+
+@app.route('/esp_fire', methods=['POST'])
+def esp_fire():
+    """
+    【ESP发令枪按下——真正的发令时刻】
+    ESP.py播放电笛声的同时，调用此接口通知后端记录 start_time
+    这才是所有裁判终端应该使用的发令时间基准
+    """
+    global current_race
+    data = request.get_json()
+    project_name = data.get('project_name', current_race['project_name'])
+    segments = data.get('segments', current_race['segments'])
+    
+    # ===== 这里是真正的发令时刻 =====
+    start_timestamp = int(time.time() * 1000)
+    
+    with lock:
+        current_race = {
+            "active": True,
+            "project_name": project_name,
+            "segments": segments,
+            "start_time": start_timestamp,
+            "start_timestamp": start_timestamp,
+            "ready": True,
+            "esp_triggered": True
+        }
+        
+        # 清空之前的成绩记录（如果有）
+        scores.clear()
+        
+        for lane in participants:
+            participants[lane]['status'] = 'racing'
+        
+        save_race_data()
+    
+    # 广播给所有裁判终端 + 裁判长
     socketio.emit('race_start', {
         "project_name": project_name,
         "segments": segments,
@@ -226,12 +284,12 @@ def start_race():
         "start_timestamp": start_timestamp
     })
     
-    print(f"[发令] 比赛开始: {project_name}, 分段数: {segments}, 开始时间: {start_timestamp}")
+    print(f"[发令] *** 真正发令时刻 *** 项目: {project_name}, 开始时间: {start_timestamp}")
     
     return jsonify({
         "status": "ok",
         "start_time": start_timestamp,
-        "message": f"{project_name} 比赛已开始"
+        "message": "比赛已开始"
     })
 
 @app.route('/record_time', methods=['POST'])
@@ -326,6 +384,8 @@ def get_race_status():
             "project_name": current_race["project_name"],
             "segments": current_race["segments"],
             "start_time": current_race["start_time"],
+            "ready": current_race["ready"],
+            "esp_triggered": current_race["esp_triggered"],
             "participants": participants,
             "scores": dict(scores)
         })
@@ -400,7 +460,9 @@ def reset_race():
             "project_name": "",
             "segments": 0,
             "start_time": None,
-            "start_timestamp": None
+            "start_timestamp": None,
+            "ready": False,
+            "esp_triggered": False
         }
         
         # 重置成绩和延迟记录
@@ -414,6 +476,9 @@ def reset_race():
         save_race_data()
     
     socketio.emit('race_reset', {"message": "比赛已重置"})
+    
+    # 通知ESP重置状态
+    socketio.emit('esp_reset', {"message": "比赛已重置"})
     
     return jsonify({"status": "ok", "message": "比赛已重置"})
 

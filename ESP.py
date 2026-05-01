@@ -1,5 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""
+ESP.py - 电子发令枪（后端统一时序中枢版）
+
+修改要点：
+1. 添加 WebSocket 客户端连接到 Flask 后端
+2. 按键4不再独立计时，而是通过 HTTP 通知后端记录发令时间
+3. 新增 fire_race() 函数，封装完整发令逻辑
+4. 新增 WebSocket 事件监听：
+   - esp_start_race: 接收裁判长的发令指令，自动执行发令流程
+   - esp_reset: 接收重置指令
+5. 按键4改为手动紧急发令（直接触发完整发令流程）
+"""
+
 import os
 import sys
 from pynput import keyboard
@@ -18,22 +31,15 @@ if sys.stdout.encoding != 'utf-8':
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# 修改计时器导入 - 使用新的计时窗口版本
+# 修改计时器导入
 try:
     from timer_window import timer, init_timer_window
     TIMER_AVAILABLE = True
-    print("[DEBUG] ESP.py: 成功导入timer_window_utf8模块")
+    print("[DEBUG] ESP.py: 成功导入timer_window模块")
 except ImportError as e:
-    print(f"[DEBUG] ESP.py: 无法导入timer_window_utf8模块: {e}")
-    # 尝试导入旧版本
-    try:
-        from timer_window import timer, init_timer_window
-        TIMER_AVAILABLE = True
-        print("[DEBUG] ESP.py: 成功导入timer_window模块")
-    except ImportError:
-        TIMER_AVAILABLE = False
-        timer = None
-        print("[DEBUG] ESP.py: 无法导入任何计时器模块")
+    print(f"[DEBUG] ESP.py: 无法导入timer_window模块: {e}")
+    TIMER_AVAILABLE = False
+    timer = None
 
 # 尝试导入共享模块
 try:
@@ -70,6 +76,171 @@ for key, filename in SOUND_FILES.items():
     except pygame.error as e:
         print(f"无法加载 {filename}: {e}")
         sys.exit(1)
+
+# ==================== Flask后端通信配置 ====================
+FLASK_URL = "http://localhost:5000"
+FLASK_WS_URL = "http://localhost:5000"
+
+# WebSocket客户端（连接Flask后端）
+flask_sio = None
+
+def connect_flask_websocket():
+    """连接到Flask后端的WebSocket"""
+    global flask_sio
+    try:
+        import socketio as ws_client
+        flask_sio = ws_client.Client()
+        
+        @flask_sio.event
+        def connect():
+            print("[ESP-WS] 已连接到Flask后端")
+        
+        @flask_sio.event
+        def disconnect():
+            print("[ESP-WS] 与Flask后端断开连接")
+        
+        @flask_sio.on('esp_start_race')
+        def on_esp_start_race(data):
+            """接收裁判长发令指令 → 自动执行发令流程"""
+            print(f"[ESP-WS] 收到发令指令: {data}")
+            project_name = data.get('project_name', '游泳比赛')
+            segments = data.get('segments', 1)
+            
+            # 在新线程中执行发令流程（避免阻塞WebSocket）
+            threading.Thread(
+                target=auto_fire_sequence,
+                args=(project_name, segments),
+                daemon=True
+            ).start()
+        
+        @flask_sio.on('esp_reset')
+        def on_esp_reset(data):
+            """接收重置指令"""
+            print(f"[ESP-WS] 收到重置指令: {data}")
+            # 重置计时器
+            if TIMER_AVAILABLE and timer:
+                try:
+                    timer.reset_timer()
+                    timer.set_color("white")
+                    print("[ESP] 计时器已重置")
+                except Exception as e:
+                    print(f"[ESP] 重置计时器失败: {e}")
+        
+        flask_sio.connect(FLASK_WS_URL, transports=['websocket', 'polling'])
+        print("[ESP-WS] WebSocket连接已建立")
+        return True
+    except ImportError:
+        print("[ESP-WS] 无法导入socketio客户端库，WebSocket功能不可用")
+        print("[ESP-WS] 请运行: pip install python-socketio[client]")
+        return False
+    except Exception as e:
+        print(f"[ESP-WS] 连接Flask后端失败: {e}")
+        print(f"[ESP-WS] 将使用独立模式运行（按键4为手动发令）")
+        return False
+
+
+def notify_backend_fire(project_name, segments):
+    """通知后端记录发令时间（POST /esp_fire）"""
+    try:
+        import urllib.request
+        req_data = json.dumps({
+            "project_name": project_name,
+            "segments": segments
+        }).encode('utf-8')
+        req = urllib.request.Request(
+            f'{FLASK_URL}/esp_fire',
+            data=req_data,
+            headers={'Content-Type': 'application/json'}
+        )
+        resp = urllib.request.urlopen(req, timeout=5)
+        result = json.loads(resp.read())
+        server_start_time = result.get('start_time')
+        print(f"[ESP] 后端已记录发令时间: {server_start_time}")
+        return server_start_time
+    except Exception as e:
+        print(f"[ESP] 通知后端失败: {e}")
+        return None
+
+
+def auto_fire_sequence(project_name, segments):
+    """
+    自动发令流程（由裁判长触发）
+    1. 播放 take your mark
+    2. 计时器变红
+    3. 等待约1.5秒
+    4. 播放电笛声
+    5. 通知后端记录发令时间
+    6. 启动本地计时器
+    7. 通知MQTT设备
+    """
+    print(f"[ESP] 开始自动发令流程: {project_name}")
+    
+    # 1. 播放 take your mark
+    print("[ESP] 播放: take your mark")
+    sounds['3'].play()
+    
+    # 2. 计时器变红
+    if TIMER_AVAILABLE and timer:
+        try:
+            timer.set_color("red")
+            print("[ESP] 计时器: 红色（准备）")
+        except Exception as e:
+            print(f"[ESP] 计时器设置红色失败: {e}")
+    
+    # 广播给裁判长：ESP状态更新
+    if flask_sio and flask_sio.connected:
+        flask_sio.emit('esp_status', {
+            "stage": "take_your_mark",
+            "timestamp": int(time.time() * 1000),
+            "project_name": project_name
+        })
+    
+    # 3. 等待约1.5秒（模拟裁判反应时间）
+    time.sleep(1.5)
+    
+    # 4. 执行发令
+    fire_race(project_name, segments)
+
+
+def fire_race(project_name, segments):
+    """
+    真正的发令执行（电笛声 + 通知后端 + 启动计时器 + MQTT）
+    可由裁判长触发（auto_fire_sequence）或手动按键4触发
+    """
+    print(f"[ESP] === 执行发令 === 项目: {project_name}")
+    
+    # 1. 播放电笛声
+    sounds['4'].play()
+    print("[ESP] 播放: 电笛声")
+    
+    # 2. 通知后端记录发令时间（这是真正的发令时刻）
+    server_start_time = notify_backend_fire(project_name, segments)
+    
+    # 3. 启动本地计时器
+    if TIMER_AVAILABLE and timer:
+        try:
+            timer.set_color("green")
+            timer.start_timer()
+            print("[ESP] 计时器: 绿色，开始计时")
+        except Exception as e:
+            print(f"[ESP] 计时器启动失败: {e}")
+    
+    # 4. 通知MQTT设备
+    device_manager.send_command_to_all("start_timer", {
+        "server_start_time": server_start_time or int(time.time() * 1000)
+    })
+    
+    # 5. 广播给裁判长：ESP已完成发令
+    if flask_sio and flask_sio.connected:
+        flask_sio.emit('esp_status', {
+            "stage": "fired",
+            "timestamp": int(time.time() * 1000),
+            "project_name": project_name,
+            "start_time": server_start_time
+        })
+    
+    print(f"[ESP] === 发令完成 === {project_name}")
+
 
 # ==================== 设备管理类 ====================
 class DeviceManager:
@@ -163,23 +334,6 @@ class DeviceManager:
 # 全局设备管理器
 device_manager = DeviceManager()
 
-def start_timer_sync():
-    """同步启动计时器"""
-    if TIMER_AVAILABLE and timer:
-        try:
-            # 先变绿
-            timer.set_color("green")
-            print("[计时器] 颜色: 绿色")
-            
-            # 立即开始计时
-            timer.start_timer()
-            print("[计时器] 开始计时")
-            
-            return True
-        except Exception as e:
-            print(f"[计时器] 启动失败: {e}")
-            return False
-    return False
 
 def on_press(key):
     """键盘按下事件回调"""
@@ -213,36 +367,24 @@ def on_press(key):
                         print("[计时器] 颜色: 红色")
                     except Exception as e:
                         print(f"[计时器] 设置红色失败: {e}")
+                
+                # 广播给裁判长：准备就绪
+                if flask_sio and flask_sio.connected:
+                    flask_sio.emit('esp_status', {
+                        "stage": "take_your_mark",
+                        "timestamp": int(time.time() * 1000)
+                    })
                 return
             
-            # 按键4：电笛声 + 启动计时 + 所有设备开始计时
+            # 按键4：手动紧急发令（直接触发完整发令流程）
             elif key.char == '4':
-                print(f"[DEBUG] ESP.py: 按键4按下 - 启动计时")
-                
-                # 1. 播放音效
-                sounds[key.char].play()
-                print(f"[DEBUG] ESP.py: 播放音效 {key.char}")
-                
-                # 2. 启动本地计时器（同步）
-                if start_timer_sync():
-                    print("[计时器] 按键4: 本地计时器已启动")
-                else:
-                    print("[计时器] 按键4: 本地计时器启动失败")
-                
-                # 3. 向所有设备发送开始计时命令
-                print("[设备管理] 向所有设备发送开始计时命令...")
-                device_manager.send_command_to_all("start_timer")
-                
-                # 4. 原有的shared_functions调用
-                try:
-                    from shared_functions import start_timing
-                    start_timing()
-                    print("[shared_functions] start_timing已调用")
-                except ImportError:
-                    print("[DEBUG] ESP.py: 无法导入start_timing函数")
-                except Exception as e:
-                    print(f"[shared_functions] 调用失败: {e}")
-                
+                print(f"[DEBUG] ESP.py: 按键4 - 手动紧急发令")
+                # 在新线程中执行，避免阻塞键盘监听
+                threading.Thread(
+                    target=fire_race,
+                    args=("手动发令", 1),
+                    daemon=True
+                ).start()
                 return
             
             # 按键5：延迟测试 + 所有设备延迟检测
@@ -262,7 +404,6 @@ def on_press(key):
                     test_func = shared_functions.get_test_latency()
                     if test_func:
                         print(f"[DEBUG] ESP.py: 从shared_functions获取到test_latency函数")
-                        # 在新线程中执行，避免阻塞音效播放
                         threading.Thread(
                             target=test_func,
                             daemon=True
@@ -333,7 +474,6 @@ def on_press(key):
         elif key.char in ('w', 'W'):
             if TIMER_AVAILABLE and timer:
                 try:
-                    # 检查窗口状态并切换
                     if hasattr(timer, 'root') and timer.root:
                         if timer.root.state() == 'withdrawn':
                             timer.show_window()
@@ -353,7 +493,6 @@ def on_press(key):
                 test_func = shared_functions.get_test_latency()
                 if test_func:
                     print(f"[DEBUG] ESP.py: 从shared_functions获取到test_latency函数")
-                    # 在新线程中执行，避免阻塞音效播放
                     threading.Thread(
                         target=test_func,
                         daemon=True
@@ -363,16 +502,14 @@ def on_press(key):
             else:
                 print(f"[DEBUG] ESP.py: shared_functions模块不可用")
         
-        # 按键 'x' 或 'X': 启动计时（独立按键）
+        # 按键 'x' 或 'X': 启动计时（独立按键，仅本地）
         elif key.char in ('x', 'X'):
             print(f"[DEBUG] ESP.py: 启动计时按键按下")
-            # 启动计时器
             if start_timer_sync():
                 print("[计时器] 按键X: 计时器已启动")
             else:
                 print("[计时器] 按键X: 计时器启动失败")
             
-            # 原有的shared_functions调用
             try:
                 from shared_functions import start_timing
                 start_timing()
@@ -390,6 +527,21 @@ def on_press(key):
     except Exception as e:
         print(f"[DEBUG] ESP.py: on_press函数出错: {e}")
 
+
+def start_timer_sync():
+    """同步启动计时器（仅本地）"""
+    if TIMER_AVAILABLE and timer:
+        try:
+            timer.set_color("green")
+            timer.start_timer()
+            print("[计时器] 开始计时")
+            return True
+        except Exception as e:
+            print(f"[计时器] 启动失败: {e}")
+            return False
+    return False
+
+
 def start_keyboard_monitoring():
     """启动键盘监听（非阻塞）"""
     try:
@@ -402,19 +554,19 @@ def start_keyboard_monitoring():
         print(f"[DEBUG] ESP.py: 启动键盘监听失败: {e}")
         return None
 
+
 def main():
     """独立运行时的主函数"""
-    # 使用全局变量
     global TIMER_AVAILABLE, timer
     
     print("="*60)
-    print("电子发令枪已启动。")
+    print("电子发令枪 - 后端统一时序中枢版")
     print("="*60)
     print("音效控制：")
     print("  1 - 四声短哨")
     print("  2 - 一声长哨")
-    print("  3 - take your mark (计时器变红)")
-    print("  4 - 电笛声 (启动计时 + 所有设备开始计时)")
+    print("  3 - take your mark (计时器变红 + 通知后端)")
+    print("  4 - 紧急手动发令 (直接电笛声 + 通知后端)")
     print("  5 - 延迟测试 (所有设备延迟检测)")
     
     print("\n设备管理：")
@@ -429,10 +581,23 @@ def main():
     print("  z/Z - 重置计时器")
     print("  w/W - 显示/隐藏计时窗口")
     print("  d/D - 延迟测试 (独立按键)")
-    print("  x/X - 启动计时 (独立按键)")
+    print("  x/X - 本地启动计时 (独立按键)")
+    
+    print("\n发令流程说明：")
+    print("  [自动模式] 裁判长点击发令 → ESP自动播放take your mark")
+    print("            → 等待1.5秒 → 电笛声 → 通知后端记录时间")
+    print("  [手动模式] 按4直接发令（紧急情况使用）")
     
     print("\n按 Ctrl+C 退出程序。")
     print("="*60)
+    
+    # 连接到Flask后端WebSocket
+    print("\n[初始化] 正在连接Flask后端...")
+    ws_connected = connect_flask_websocket()
+    if ws_connected:
+        print("[初始化] Flask后端连接成功")
+    else:
+        print("[初始化] Flask后端连接失败，将使用独立模式")
     
     # 启动计时窗口
     if TIMER_AVAILABLE:
@@ -441,7 +606,6 @@ def main():
             success = init_timer_window()
             if success:
                 print("计时窗口初始化成功")
-                # 等待窗口完全显示
                 time.sleep(0.5)
                 print("计时窗口已就绪")
             else:
@@ -466,8 +630,9 @@ def main():
             time.sleep(1)
     except KeyboardInterrupt:
         print("\n程序退出。")
-        # 清理设备连接
         device_manager.cleanup()
+        if flask_sio and flask_sio.connected:
+            flask_sio.disconnect()
     finally:
         pygame.mixer.quit()
         sys.exit(0)

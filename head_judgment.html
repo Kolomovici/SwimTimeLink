@@ -837,8 +837,30 @@
               fetchScores();
             });
 
-            socket.on("pong", (data) => {
+                        socket.on("pong", (data) => {
               // 心跳响应
+            });
+
+            socket.on("esp_status", (data) => {
+              console.log("ESP状态更新:", data);
+              const stage = data.stage;
+              const footerStatus = document.getElementById("footerStatus");
+              
+              if (stage === "take_your_mark") {
+                footerStatus.innerText = "⏸️ ESP: 预备...";
+                footerStatus.style.color = "#ffaa00";
+              } else if (stage === "fired") {
+                footerStatus.innerText = "🏊 ESP: 已发令!";
+                footerStatus.style.color = "#4caf50";
+                if (data.start_time) {
+                  const time = new Date(data.start_time).toLocaleTimeString("zh-CN");
+                  document.getElementById("lastCommandTime").innerText = `最后发令: ${time}`;
+                }
+                showSuccess(`ESP已发令: ${data.project_name}`);
+                setTimeout(() => {
+                  fetchScores();
+                }, 500);
+              }
             });
 
             socket.on("race_start", (data) => {
@@ -1072,56 +1094,49 @@
 
         // ==================== 发令比赛 ====================
         function startRace() {
-          if (!httpConnected) {
-            alert("服务器未连接");
-            return;
+            if (!httpConnected) {
+              alert("服务器未连接");
+              return;
+            }
+
+            const projectName = eventSelect.value;
+            const segments = eventLaps;
+            currentProjectName = projectName;
+
+            startRaceBtn.disabled = true;
+            startRaceBtn.innerHTML =
+              '🚦 发令中... <span class="loading-spinner"></span>';
+
+            fetch(`${serverBaseUrl}/start_race`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                project_name: projectName,
+                segments: segments,
+              }),
+            })
+              .then((res) => {
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                return res.json();
+              })
+              .then((data) => {
+                if (data.status === "ok") {
+                  showSuccess(`已通知ESP执行发令流程: ${projectName}`);
+                  footerStatus.innerText = "📢 已发送发令指令到ESP";
+                  footerStatus.style.color = "#ffaa00";
+                } else {
+                  alert("发令失败: " + (data.message || "未知错误"));
+                }
+              })
+              .catch((err) => {
+                console.error("发令失败:", err);
+                alert("发令失败: " + err.message);
+              })
+              .finally(() => {
+                startRaceBtn.disabled = false;
+                startRaceBtn.innerHTML = "🚦 发令开始比赛";
+              });
           }
-
-          const projectName = eventSelect.value;
-          const segments = eventLaps;
-          currentProjectName = projectName;
-
-          startRaceBtn.disabled = true;
-          startRaceBtn.innerHTML =
-            '🚦 发令中... <span class="loading-spinner"></span>';
-
-          fetch(`${serverBaseUrl}/start_race`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              project_name: projectName,
-              segments: segments,
-            }),
-          })
-            .then((res) => {
-              if (!res.ok) throw new Error(`HTTP ${res.status}`);
-              return res.json();
-            })
-            .then((data) => {
-              if (data.start_time) {
-                lastStartTime = data.start_time;
-                const time = new Date(data.start_time).toLocaleTimeString(
-                  "zh-CN",
-                );
-                lastCommandTime.innerText = `最后发令: ${time}`;
-                showSuccess(`发令成功！项目: ${projectName}`);
-
-                setTimeout(() => {
-                  fetchScores();
-                }, 500);
-              } else {
-                alert("发令失败: " + (data.message || "未知错误"));
-              }
-            })
-            .catch((err) => {
-              console.error("发令失败:", err);
-              alert("发令失败: " + err.message);
-            })
-            .finally(() => {
-              startRaceBtn.disabled = false;
-              startRaceBtn.innerHTML = "🚦 发令开始比赛";
-            });
-        }
 
         // ==================== 事件监听 ====================
         eventSelect.addEventListener("change", (e) => {
