@@ -1,4 +1,7 @@
-from flask import Flask, request, jsonify, send_file, send_from_directory
+import eventlet
+eventlet.monkey_patch()
+
+from flask import Flask, request, jsonify, send_file
 from flask_socketio import SocketIO, emit
 import threading
 import time
@@ -11,7 +14,19 @@ import subprocess
 import sys
 
 app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*")
+
+# ==================== Flask-SocketIO 配置（关键修复） ====================
+# 使用 eventlet 作为异步模式，确保 WebSocket 正常工作
+socketio = SocketIO(
+    app,
+    cors_allowed_origins="*",
+    async_mode='eventlet',
+    logger=False,        # 生产环境建议关闭，调试可改为 True
+    engineio_logger=False,
+    ping_timeout=60,
+    ping_interval=25,
+    cookie=False
+)
 
 # ==================== 计时器进程管理 ====================
 timer_process = None
@@ -141,26 +156,34 @@ def serve_static(filename):
         return send_file(filename)
     return jsonify({"error": "Not found"}), 404
 
-@app.route('/sync', methods=['POST'])
+@app.route('/sync', methods=['POST', 'GET'])
 def sync_time():
-    """时间同步接口"""
-    data = request.get_json()
-    lane = data.get('lane')
-    client_time = data.get('client_time')
-    
+    """时间同步接口（同时支持 POST 和 GET）"""
     server_time = int(time.time() * 1000)
     
-    # 计算RTT和时钟偏移
-    if client_time:
-        rtt = int((time.time() * 1000) - client_time)
+    if request.method == 'POST':
+        data = request.get_json(silent=True) or {}
+        lane = data.get('lane')
+        client_time = data.get('client_time')
+        
+        if client_time:
+            rtt = int((time.time() * 1000) - client_time)
+        else:
+            rtt = 0
+        
+        return jsonify({
+            "status": "ok",
+            "server_time": server_time,
+            "rtt": rtt,
+            "lane": lane
+        })
     else:
-        rtt = 0
-    
-    return jsonify({
-        "status": "ok",
-        "server_time": server_time,
-        "rtt": rtt
-    })
+        # GET 请求 - 简单的连通性测试
+        return jsonify({
+            "status": "ok",
+            "server_time": server_time,
+            "message": "服务器运行正常"
+        })
 
 @app.route('/register_participant', methods=['POST'])
 def register_participant():
@@ -550,17 +573,25 @@ def handle_register_judge(data):
     
     # 发送当前比赛状态
     with lock:
-        if current_race["active"]:
+        if current_race["active"] and current_race["start_time"]:
             emit('race_start', {
                 "project_name": current_race["project_name"],
                 "segments": current_race["segments"],
                 "start_time": current_race["start_time"]
             })
+            print(f"[裁判注册] 已发送当前比赛状态给泳道{lane}")
     
     emit('registration_confirm', {
         "status": "ok",
         "lane": lane,
         "message": f"泳道{lane} 已注册成功"
+    })
+    
+    # 通知裁判长有新的裁判端连接
+    socketio.emit('judge_connected', {
+        'lane': lane,
+        'sid': request.sid,
+        'timestamp': datetime.now().isoformat()
     })
 
 @socketio.on('ping')
@@ -580,12 +611,19 @@ if __name__ == '__main__':
     print("按 Ctrl+C 停止服务器")
     print("=" * 60)
     
-    # 启动计时器脚本
+        # 启动计时器脚本
     print("\n[初始化] 正在启动计时器脚本...")
     start_timer_script()
     
     try:
-        socketio.run(app, host='0.0.0.0', port=5000, debug=True, use_reloader=False)
+        socketio.run(
+            app,
+            host='0.0.0.0',
+            port=5000,
+            debug=False,
+            use_reloader=False,
+            allow_unsafe_werkzeug=True
+        )
     finally:
         # 服务器停止时关闭计时器进程
         print("\n[清理] 正在停止计时器脚本...")

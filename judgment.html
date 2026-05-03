@@ -1,12 +1,12 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
     />
-    <title>泳道计时器</title>
+    <title>泳道计时器 - 裁判端</title>
     <style>
       * {
         box-sizing: border-box;
@@ -137,88 +137,69 @@
         margin-top: 8px;
         display: none;
       }
-      .camera-view {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: rgba(0, 0, 0, 0.95);
-        z-index: 1000;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-        visibility: hidden;
-        opacity: 0;
+
+      /* 手动连接界面 */
+      .connect-panel {
+        background: #1a3f5a;
+        border-radius: 24px;
+        padding: 20px;
+        margin-bottom: 20px;
+        color: white;
+        text-align: center;
+      }
+      .connect-panel h3 {
+        margin-bottom: 16px;
+        font-weight: 400;
+        font-size: 1.2rem;
+      }
+      .connect-panel input {
+        background: rgba(255, 255, 255, 0.15);
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        border-radius: 40px;
+        padding: 12px 18px;
+        font-size: 1rem;
+        outline: none;
+        color: white;
+        width: 100%;
+        margin-bottom: 10px;
         transition: all 0.3s;
       }
-      .camera-view.active {
-        visibility: visible;
-        opacity: 1;
+      .connect-panel input::placeholder {
+        color: rgba(255, 255, 255, 0.4);
       }
-      #qrVideo {
-        width: 90%;
-        max-width: 400px;
-        border-radius: 16px;
-        border: 3px solid #2a80b9;
-        background: #000;
+      .connect-panel input:focus {
+        border-color: #4a9fdf;
+        background: rgba(255, 255, 255, 0.2);
       }
-      .camera-controls {
-        margin-top: 20px;
+      .connect-panel .input-row {
         display: flex;
-        gap: 20px;
-        flex-wrap: wrap;
-        justify-content: center;
+        gap: 10px;
       }
-      .camera-btn {
+      .connect-panel .input-row input {
+        flex: 1;
+      }
+      .connect-btn {
         background: #2a80b9;
-        color: white;
         border: none;
         border-radius: 40px;
         padding: 12px 24px;
         font-size: 1rem;
+        font-weight: 600;
+        color: white;
         cursor: pointer;
-        min-width: 120px;
+        width: 100%;
+        box-shadow: 0 4px 0 #134a72;
+        transition: 0.08s linear;
+        margin-top: 4px;
       }
-      .camera-btn.cancel {
-        background: #7f8c8d;
+      .connect-btn:active {
+        transform: translateY(3px);
+        box-shadow: 0 1px 0 #134a72;
       }
-      .camera-btn:disabled {
+      .connect-btn:disabled {
         opacity: 0.5;
         cursor: not-allowed;
-      }
-      .scan-tip {
-        color: white;
-        margin-bottom: 16px;
-        font-size: 1.1rem;
-        text-align: center;
-        padding: 0 20px;
-      }
-      .scan-status {
-        color: #ffaa00;
-        margin-top: 12px;
-        font-size: 0.9rem;
-        text-align: center;
-      }
-      .permission-denied {
-        color: #ff4444;
-        text-align: center;
-        margin-top: 20px;
-        padding: 16px;
-        background: rgba(0, 0, 0, 0.7);
-        border-radius: 12px;
-      }
-      .manual-input {
-        margin-top: 20px;
-        text-align: center;
-      }
-      .manual-input input {
-        padding: 10px;
-        border-radius: 20px;
-        border: none;
-        width: 80%;
-        margin-bottom: 10px;
+        transform: none;
       }
     </style>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
@@ -232,13 +213,25 @@
         </div>
       </div>
       <div class="main-card">
+        <!-- 连接面板 -->
+        <div class="connect-panel" id="connectPanel">
+          <h3>🔗 连接服务器</h3>
+          <input type="text" id="serverAddr" placeholder="服务器地址 (IP或域名)" value="localhost" />
+          <div class="input-row">
+            <input type="text" id="serverPort" placeholder="端口" value="5000" />
+            <input type="number" id="laneInput" placeholder="泳道 (1-8)" min="1" max="8" />
+          </div>
+          <button class="connect-btn" id="connectBtn">🔌 连接</button>
+          <div id="connError" class="error-message" style="color: #ff6b6b;"></div>
+        </div>
+
         <div class="info-panel">
           <div class="event" id="eventName">等待连接...</div>
           <div class="status" id="raceStatus">⏳ 等待发令</div>
         </div>
         <div id="buttonContainer" class="timer-buttons">
           <div style="text-align: center; color: #666; grid-column: span 2">
-            请先扫描二维码连接服务器
+            请先连接服务器
           </div>
         </div>
         <div style="margin-top: 20px; text-align: center; color: #1a4a73">
@@ -251,31 +244,6 @@
         <span>服务器: <span id="serverDisplay">--</span></span>
         <span id="timeDisplay">--:--:--</span>
       </div>
-    </div>
-
-    <!-- 摄像头扫码视图 -->
-    <div id="cameraView" class="camera-view">
-      <div class="scan-tip">📷 请将二维码对准摄像头</div>
-      <video id="qrVideo" autoplay playsinline muted></video>
-      <div id="scanStatus" class="scan-status"></div>
-      <div class="camera-controls">
-        <button class="camera-btn" id="startCameraBtn">📷 开启相机</button>
-        <button class="camera-btn cancel" id="closeCameraBtn">关闭</button>
-      </div>
-      <div class="manual-input">
-        <input
-          type="text"
-          id="manualServerUrl"
-          placeholder="或手动输入服务器地址 (http://ip:port)"
-        />
-        <input type="number" id="manualLane" placeholder="泳道号 (1-8)" />
-        <button class="camera-btn" id="manualConnectBtn">手动连接</button>
-      </div>
-      <div
-        id="permissionMsg"
-        class="permission-denied"
-        style="display: none"
-      ></div>
     </div>
 
     <script>
@@ -291,15 +259,12 @@
         const syncError = document.getElementById("syncError");
         const networkWarning = document.getElementById("networkWarning");
         const serverDisplaySpan = document.getElementById("serverDisplay");
-        const cameraView = document.getElementById("cameraView");
-        const qrVideo = document.getElementById("qrVideo");
-        const startCameraBtn = document.getElementById("startCameraBtn");
-        const closeCameraBtn = document.getElementById("closeCameraBtn");
-        const scanStatus = document.getElementById("scanStatus");
-        const permissionMsg = document.getElementById("permissionMsg");
-        const manualServerUrl = document.getElementById("manualServerUrl");
-        const manualLane = document.getElementById("manualLane");
-        const manualConnectBtn = document.getElementById("manualConnectBtn");
+        const connError = document.getElementById("connError");
+        const serverAddr = document.getElementById("serverAddr");
+        const serverPort = document.getElementById("serverPort");
+        const laneInput = document.getElementById("laneInput");
+        const connectBtn = document.getElementById("connectBtn");
+        const connectPanel = document.getElementById("connectPanel");
 
         // ==================== 全局变量 ====================
         let socket = null;
@@ -318,260 +283,114 @@
         let lastHeartbeat = Date.now();
         let serverBaseUrl = "";
         let currentLane = null;
-        let mediaStream = null;
-        let scanTimer = null;
-        let jsQrLoaded = false;
 
-        // 从URL获取参数
-        const urlParams = new URLSearchParams(window.location.search);
-        const urlLane = urlParams.get("lane");
-        const urlServer = urlParams.get("server");
-
-        // 预加载jsQR库
-        function loadJsQR() {
-          return new Promise((resolve, reject) => {
-            if (typeof window.jsQR !== "undefined") {
-              jsQrLoaded = true;
-              resolve();
-              return;
-            }
-            const script = document.createElement("script");
-            script.src =
-              "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js";
-            script.onload = () => {
-              jsQrLoaded = true;
-              resolve();
-            };
-            script.onerror = () => {
-              reject(new Error("jsQR库加载失败，请检查网络连接"));
-            };
-            document.head.appendChild(script);
-          });
-        }
-
-        // 如果有URL参数则直接使用
-        if (urlServer && urlLane) {
-          serverBaseUrl = decodeURIComponent(urlServer);
-          currentLane = parseInt(urlLane);
-          laneDisplay.innerText = currentLane;
-          serverDisplaySpan.innerText = serverBaseUrl.replace(
-            /^https?:\/\//,
-            "",
-          );
-          connectToServer();
-        } else {
-          // 没有参数则显示相机扫码按钮
-          laneDisplay.innerText = "扫码";
-          serverDisplaySpan.innerText = "待连接";
-          // 预加载jsQR
-          loadJsQR().catch((err) => {
-            console.error("jsQR加载失败:", err);
-            scanStatus.innerText = "二维码识别库加载失败，请使用手动连接";
-            scanStatus.style.color = "#ff4444";
-          });
-          showCameraView();
-        }
-
-        // ==================== 摄像头扫码功能 ====================
-        function showCameraView() {
-          cameraView.classList.add("active");
-          // 自动尝试开启相机
-          setTimeout(() => {
-            startCameraScan();
-          }, 500);
-        }
-
-        function hideCameraView() {
-          cameraView.classList.remove("active");
-          if (mediaStream) {
-            mediaStream.getTracks().forEach((track) => track.stop());
-            mediaStream = null;
-          }
-          qrVideo.srcObject = null;
-          if (scanTimer) {
-            clearInterval(scanTimer);
-            scanTimer = null;
-          }
-          scanStatus.innerText = "";
-        }
-
-        // 解析二维码内容
-        function parseQRData(url) {
-          try {
-            // 处理可能的URL编码问题
-            let decodedUrl = url;
-            try {
-              decodedUrl = decodeURIComponent(url);
-            } catch (e) {}
-
-            const urlObj = new URL(decodedUrl);
-            const params = new URLSearchParams(urlObj.search);
-            let server = params.get("server");
-            const lane = params.get("lane");
-
-            if (server && lane) {
-              // 确保server是完整的URL
-              if (
-                !server.startsWith("http://") &&
-                !server.startsWith("https://")
-              ) {
-                server = "http://" + server;
-              }
-              return {
-                server: server,
-                lane: parseInt(lane),
-              };
-            }
-          } catch (e) {
-            console.error("解析二维码失败:", e);
-          }
-          return null;
-        }
-
-        // 从视频帧中扫描二维码
-        async function scanQRFromVideo() {
-          if (!qrVideo.videoWidth || !qrVideo.videoHeight) return false;
-          if (!jsQrLoaded) return false;
-
-          const canvas = document.createElement("canvas");
-          const ctx = canvas.getContext("2d");
-          canvas.width = qrVideo.videoWidth;
-          canvas.height = qrVideo.videoHeight;
-          ctx.drawImage(qrVideo, 0, 0, canvas.width, canvas.height);
-          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const code = window.jsQR(
-            imageData.data,
-            canvas.width,
-            canvas.height,
-            {
-              inversionAttempts: "dontInvert",
-            },
-          );
-
-          if (code && code.data) {
-            const qrData = parseQRData(code.data);
-            if (qrData && qrData.server && qrData.lane) {
-              scanStatus.innerText = "✅ 扫描成功！正在连接...";
-              // 成功扫描到二维码
-              setTimeout(() => {
-                hideCameraView();
-                serverBaseUrl = qrData.server;
-                currentLane = qrData.lane;
-                laneDisplay.innerText = currentLane;
-                serverDisplaySpan.innerText = serverBaseUrl.replace(
-                  /^https?:\/\//,
-                  "",
-                );
-                connectToServer();
-              }, 500);
-              return true;
-            } else {
-              scanStatus.innerText =
-                "❌ 无效的二维码，请扫描裁判长控制台生成的二维码";
-              return false;
-            }
-          }
-          return false;
-        }
-
-        // 启动摄像头扫描
-        async function startCameraScan() {
-          // 先检查浏览器支持
-          if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            permissionMsg.innerText =
-              "您的浏览器不支持摄像头功能，请使用手动连接";
-            permissionMsg.style.display = "block";
-            scanStatus.innerText = "浏览器不支持摄像头";
-            return;
-          }
-
-          try {
-            if (mediaStream) {
-              mediaStream.getTracks().forEach((track) => track.stop());
-            }
-
-            scanStatus.innerText = "正在请求摄像头权限...";
-
-            mediaStream = await navigator.mediaDevices.getUserMedia({
-              video: { facingMode: "environment" },
-            });
-
-            qrVideo.srcObject = mediaStream;
-
-            // 等待视频元数据加载完成
-            await new Promise((resolve) => {
-              qrVideo.onloadedmetadata = () => {
-                qrVideo.play();
-                resolve();
-              };
-            });
-
-            scanStatus.innerText = "摄像头已开启，请将二维码对准镜头";
-            permissionMsg.style.display = "none";
-
-            // 启动扫描定时器
-            if (scanTimer) clearInterval(scanTimer);
-            scanTimer = setInterval(async () => {
-              const success = await scanQRFromVideo();
-              if (success) {
-                clearInterval(scanTimer);
-                scanTimer = null;
-              }
-            }, 500);
-          } catch (err) {
-            console.error("启动摄像头失败:", err);
-            let errorMsg = "";
-            if (err.name === "NotAllowedError") {
-              errorMsg = "摄像头权限被拒绝，请在浏览器设置中允许摄像头访问";
-            } else if (err.name === "NotFoundError") {
-              errorMsg = "未检测到摄像头设备";
-            } else {
-              errorMsg = "无法访问摄像头: " + err.message;
-            }
-            permissionMsg.innerText = errorMsg;
-            permissionMsg.style.display = "block";
-            scanStatus.innerText = "摄像头启动失败，请使用手动连接";
+        // 尝试从 localStorage 恢复上次的连接
+        const lastServer = localStorage.getItem("judge_lastServer");
+        const lastLane = localStorage.getItem("judge_lastLane");
+        if (lastServer) {
+          const parts = lastServer.split(":");
+          if (parts.length === 2) {
+            serverAddr.value = parts[0];
+            serverPort.value = parts[1];
           }
         }
+        if (lastLane) {
+          laneInput.value = lastLane;
+        }
 
-        // 手动连接
-        function manualConnect() {
-          let serverUrl = manualServerUrl.value.trim();
-          const lane = parseInt(manualLane.value.trim());
+                // ==================== 连接服务器 ====================
+        function connectToServer() {
+          const addr = serverAddr.value.trim();
+          const port = serverPort.value.trim();
+          const lane = parseInt(laneInput.value.trim());
 
-          if (!serverUrl) {
-            alert("请输入服务器地址");
-            return;
-          }
-          if (!lane || lane < 1 || lane > 8) {
-            alert("请输入有效的泳道号 (1-8)");
-            return;
-          }
+          connError.style.display = "none";
+          connError.innerText = "";
+          if (!addr) { connError.innerText = "请输入服务器地址"; connError.style.display = "block"; return; }
+          if (!port) { connError.innerText = "请输入端口号"; connError.style.display = "block"; return; }
+          if (!lane || lane < 1 || lane > 8) { connError.innerText = "请输入有效的泳道号 (1-8)"; connError.style.display = "block"; return; }
 
-          // 确保URL格式正确
-          if (
-            !serverUrl.startsWith("http://") &&
-            !serverUrl.startsWith("https://")
-          ) {
-            serverUrl = "http://" + serverUrl;
-          }
+          connectBtn.disabled = true;
+          connectBtn.innerText = "⏳ 连接中...";
 
-          hideCameraView();
-          serverBaseUrl = serverUrl;
+          serverBaseUrl = `http://${addr}:${port}`;
           currentLane = lane;
           laneDisplay.innerText = currentLane;
-          serverDisplaySpan.innerText = serverBaseUrl.replace(
-            /^https?:\/\//,
-            "",
-          );
-          connectToServer();
+          serverDisplaySpan.innerText = serverBaseUrl.replace(/^https?:\/\//, "");
+
+          // 保存到本地存储
+          localStorage.setItem("judge_lastServer", `${addr}:${port}`);
+          localStorage.setItem("judge_lastLane", lane.toString());
+
+          // 第一步：测试HTTP连接（使用 GET 和 POST 双重尝试）
+          const testSync = async () => {
+            // 先尝试 GET（简单连通性测试）
+            try {
+              const getRes = await fetch(`${serverBaseUrl}/sync`, {
+                method: "GET",
+                signal: AbortSignal.timeout(3000)
+              });
+              if (getRes.ok) return true;
+            } catch (e) {
+              // GET 失败不着急，继续尝试 POST
+            }
+            
+            // 再尝试 POST（完整时间同步）
+            const postRes = await fetch(`${serverBaseUrl}/sync`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ 
+                lane: currentLane,
+                client_time: Date.now() 
+              }),
+              signal: AbortSignal.timeout(5000)
+            });
+            if (!postRes.ok) throw new Error(`HTTP ${postRes.status}`);
+            const data = await postRes.json();
+            if (!data.server_time) throw new Error("服务器响应异常");
+            return true;
+          };
+
+          testSync()
+            .then(() => {
+              // HTTP连接成功 → 建立WebSocket
+              connectWebSocket();
+              startSync();
+              connectPanel.style.display = "none";
+              connLed.className = "connection-led online";
+              eventNameEl.innerText = "已连接";
+              raceStatusEl.innerText = "⏳ 等待发令";
+              showConnSuccess();
+            })
+            .catch((err) => {
+              let errorMsg = err.message;
+              // 提供更友好的错误提示
+              if (err.name === "TimeoutError" || err.name === "AbortError") {
+                errorMsg = "连接超时，请检查：\n1. 服务器是否已启动\n2. 地址和端口是否正确\n3. 防火墙是否放行";
+              } else if (err.message.includes("Failed to fetch") || err.message.includes("NetworkError")) {
+                errorMsg = "无法连接到服务器，请检查：\n1. 服务器是否正在运行\n2. IP地址是否正确\n3. 网络是否连通";
+              } else if (err.message.includes("HTTP 404")) {
+                errorMsg = "服务器路径错误，请检查端口号";
+              }
+              connError.innerText = "连接失败: " + errorMsg;
+              connError.style.display = "block";
+              serverBaseUrl = "";
+              currentLane = null;
+              laneDisplay.innerText = "-";
+              serverDisplaySpan.innerText = "--";
+            })
+            .finally(() => {
+              connectBtn.disabled = false;
+              connectBtn.innerText = "🔌 连接";
+            });
         }
 
-        startCameraBtn.addEventListener("click", startCameraScan);
-        closeCameraBtn.addEventListener("click", hideCameraView);
-        manualConnectBtn.addEventListener("click", manualConnect);
+        function showConnSuccess() {
+          connError.style.display = "none";
+          connError.innerText = "";
+        }
 
-        // ==================== 时间同步 ====================
+                // ==================== 时间同步 ====================
         async function syncTime() {
           if (!serverBaseUrl) return null;
 
@@ -580,28 +399,29 @@
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 5000);
 
+            // 发送客户端时间用于更精确的 RTT 计算
             const res = await fetch(`${serverBaseUrl}/sync`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ lane: currentLane }),
+              body: JSON.stringify({ 
+                lane: currentLane,
+                client_time: Date.now()   // 发送客户端时间戳
+              }),
               signal: controller.signal,
             });
 
             clearTimeout(timeoutId);
 
-            if (!res.ok) {
-              throw new Error(`HTTP ${res.status}`);
-            }
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
             const T4 = performance.now();
             const data = await res.json();
 
-            if (!data.server_time) {
-              throw new Error("服务器返回数据格式错误");
-            }
+            if (!data.server_time) throw new Error("服务器返回数据格式错误");
 
             const serverTime = data.server_time;
             const RTT = T4 - T1;
+            // 更精确的时钟偏移计算
             const offset = serverTime - (T1 + RTT / 2);
             clockOffset = offset;
 
@@ -621,7 +441,7 @@
             return offset;
           } catch (e) {
             console.warn("时间同步失败", e);
-            if (e.name === "AbortError") {
+            if (e.name === "AbortError" || e.name === "TimeoutError") {
               offsetDisplay.innerText = "超时";
             } else {
               offsetDisplay.innerText = "失败";
@@ -633,66 +453,78 @@
           }
         }
 
-        function startSync(interval = 5000) {
+                function startSync(interval = 5000) {
           syncTime();
           if (syncInterval) clearInterval(syncInterval);
           syncInterval = setInterval(() => {
-            if (connected) {
-              syncTime();
-            }
+            if (connected) syncTime();
           }, interval);
         }
 
-        // ==================== WebSocket连接 ====================
+                // ==================== WebSocket连接管理 ====================
         function setConnectionStatus(isConnected) {
           connected = isConnected;
           if (isConnected) {
             connLed.className = "connection-led online";
             networkWarning.style.display = "none";
             reconnectAttempts = 0;
-            eventNameEl.innerText = "等待发令";
+            if (currentLane) {
+              eventNameEl.innerText = "已连接 - 泳道" + currentLane;
+            } else {
+              eventNameEl.innerText = "等待发令";
+            }
           } else {
             connLed.className = "connection-led";
+            eventNameEl.innerText = "连接断开";
           }
         }
 
-        function attemptReconnect() {
+                function attemptReconnect() {
           if (reconnectTimer) clearTimeout(reconnectTimer);
           if (reconnectAttempts < maxReconnectAttempts) {
             reconnectAttempts++;
-            networkWarning.innerText = `重连中 (${reconnectAttempts}/${maxReconnectAttempts})`;
+            const delay = Math.min(3000 * reconnectAttempts, 10000); // 最多10秒
+            networkWarning.innerText = `🔄 正在重连 (${reconnectAttempts}/${maxReconnectAttempts})...`;
             networkWarning.style.display = "block";
+            console.log(`将在 ${delay/1000} 秒后尝试重连...`);
             reconnectTimer = setTimeout(() => {
               if (!connected && serverBaseUrl) {
+                console.log("尝试重新连接 WebSocket...");
                 connectWebSocket();
               }
-            }, 3000 * reconnectAttempts);
+            }, delay);
           } else {
-            networkWarning.innerText = "连接已断开，请刷新页面重新扫码";
+            networkWarning.innerText = "❌ 连接已断开，请点击「连接」按钮重新连接";
             networkWarning.style.display = "block";
+            // 显示连接面板让用户手动重连
+            connectPanel.style.display = "block";
           }
         }
 
-        function startHeartbeat() {
+                function startHeartbeat() {
           if (heartbeatInterval) clearInterval(heartbeatInterval);
+          lastHeartbeat = Date.now();
           heartbeatInterval = setInterval(() => {
+            const now = Date.now();
             if (connected && socket && socket.connected) {
-              lastHeartbeat = Date.now();
-              socket.emit("ping", { time: Date.now() });
+              lastHeartbeat = now;
+              socket.emit("ping", { time: now });
             } else if (connected && (!socket || !socket.connected)) {
+              console.warn("心跳检测: WebSocket 已断开");
               setConnectionStatus(false);
               attemptReconnect();
             }
-            if (connected && Date.now() - lastHeartbeat > 15000) {
-              networkWarning.innerText = "网络延迟较高";
+            // 检查心跳超时
+            if (connected && (now - lastHeartbeat > 15000)) {
+              networkWarning.innerText = "⚠️ 网络延迟较高，请检查连接";
               networkWarning.style.display = "block";
-            } else {
+            } else if (connected) {
               networkWarning.style.display = "none";
             }
           }, 5000);
         }
 
-        function connectWebSocket() {
+                function connectWebSocket() {
           if (!serverBaseUrl) return;
           if (socket) {
             socket.removeAllListeners();
@@ -701,18 +533,24 @@
           }
 
           try {
-            socket = io(serverBaseUrl, {
-              transports: ["websocket", "polling"],
-              reconnection: false,
-              timeout: 10000,
+            // 使用完整 URL 构造 WebSocket 连接
+            // 注意：io() 会自动处理 http→ws 协议转换
+            const wsUrl = serverBaseUrl;  // e.g. "http://192.168.1.100:5000"
+
+            console.log(`正在连接 WebSocket: ${wsUrl}`);
+            socket = io(wsUrl, {
+              transports: ["websocket", "polling"],  // polling 作为降级方案
+              reconnection: false,                   // 我们手动处理重连
+              timeout: 15000,                        // 15秒超时
               forceNew: true,
+              closeOnBeforeunload: true,
             });
 
             socket.on("connect", () => {
-              console.log("WS connected");
+              console.log("✅ WebSocket 已连接");
               setConnectionStatus(true);
               startHeartbeat();
-              // 注册裁判
+              // 注册当前泳道
               socket.emit("register_judge", {
                 lane: currentLane,
                 device_info: { userAgent: navigator.userAgent },
@@ -720,28 +558,34 @@
             });
 
             socket.on("disconnect", (reason) => {
-              console.log("WS disconnected:", reason);
+              console.log("⚠️ WebSocket 断开:", reason);
               setConnectionStatus(false);
-              if (raceActive) {
-                attemptReconnect();
-              }
+              if (raceActive) attemptReconnect();
             });
 
             socket.on("connect_error", (error) => {
-              console.error("WS connection error:", error);
+              console.error("❌ WebSocket 连接错误:", error.message);
               setConnectionStatus(false);
-              if (raceActive) {
-                attemptReconnect();
+              // 只在第一次连接失败时显示友好提示
+              if (!connected && !raceActive) {
+                networkWarning.innerText = `WebSocket连接失败: ${error.message}`;
+                networkWarning.style.display = "block";
+                // 5秒后自动隐藏
+                setTimeout(() => {
+                  if (!raceActive) networkWarning.style.display = "none";
+                }, 8000);
               }
+              if (raceActive) attemptReconnect();
             });
 
+            // ===== 业务事件 =====
             // 监听发令信号
             socket.on("race_start", (data) => {
-              console.log("收到发令", data);
+              console.log("🏊 收到发令信号", data);
               raceActive = true;
               currentSplit = 0;
               startTime = data.start_time;
-              eventName = data.project_name;
+              eventName = data.project_name || "未知项目";
               totalLaps = data.segments || 1;
 
               eventNameEl.innerText = eventName;
@@ -751,20 +595,44 @@
               networkWarning.style.display = "none";
             });
 
+            // 心跳响应
             socket.on("pong", () => {
               lastHeartbeat = Date.now();
             });
 
+            // 注册确认
             socket.on("registration_confirm", (data) => {
-              console.log("注册确认:", data);
+              console.log("📋 注册确认:", data);
               if (data.status === "ok") {
-                eventNameEl.innerText = "已连接";
+                eventNameEl.innerText = "已连接 - 泳道" + currentLane;
                 raceStatusEl.innerText = "⏳ 等待发令";
+              } else {
+                console.warn("注册被拒绝:", data.message);
               }
             });
+
+            // 比赛重置
+            socket.on("race_reset", (data) => {
+              console.log("🔄 比赛重置:", data);
+              raceActive = false;
+              currentSplit = 0;
+              startTime = null;
+              totalLaps = 0;
+              eventNameEl.innerText = "已连接";
+              raceStatusEl.innerText = "⏳ 等待发令";
+              buttonContainer.innerHTML = '<div style="text-align: center; color: #666; grid-column: span 2">等待比赛开始</div>';
+            });
+
+            // 错误事件
+            socket.on("error", (error) => {
+              console.error("SocketIO 错误:", error);
+            });
+
           } catch (err) {
             console.error("创建WebSocket失败:", err);
             setConnectionStatus(false);
+            networkWarning.innerText = "无法创建WebSocket连接: " + err.message;
+            networkWarning.style.display = "block";
           }
         }
 
@@ -822,9 +690,7 @@
             .then((data) => {
               if (data.status === "ok") {
                 const btns = document.querySelectorAll(".split-btn");
-                if (btns[segIndex]) {
-                  btns[segIndex].classList.add("done");
-                }
+                if (btns[segIndex]) btns[segIndex].classList.add("done");
                 currentSplit++;
                 if (currentSplit >= totalLaps) {
                   raceActive = false;
@@ -840,37 +706,6 @@
             });
         }
 
-        // 连接服务器主函数
-        function connectToServer() {
-          if (!serverBaseUrl || !currentLane) return;
-          // 测试HTTP连接
-          fetch(`${serverBaseUrl}/sync`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ lane: currentLane }),
-          })
-            .then((res) => {
-              if (!res.ok) throw new Error(`HTTP ${res.status}`);
-              return res.json();
-            })
-            .then((data) => {
-              if (data.server_time) {
-                connectWebSocket();
-                startSync();
-              } else {
-                throw new Error("服务器响应异常");
-              }
-            })
-            .catch((err) => {
-              console.error("连接服务器失败:", err);
-              alert(
-                "连接服务器失败: " + err.message + "\n请检查服务器地址是否正确",
-              );
-              // 重新显示扫码界面
-              showCameraView();
-            });
-        }
-
         // 更新时间显示
         function updateClock() {
           const now = new Date();
@@ -883,18 +718,47 @@
         }
         setInterval(updateClock, 500);
 
+        // 连接按钮事件
+        connectBtn.addEventListener("click", connectToServer);
+
+        // 回车键触发连接
+        laneInput.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") connectToServer();
+        });
+
+                // 页面可见性变化时处理（切换到后台/前台）
+        document.addEventListener("visibilitychange", () => {
+          if (document.hidden) {
+            // 页面隐藏时，降低心跳频率
+            if (heartbeatInterval) {
+              clearInterval(heartbeatInterval);
+              heartbeatInterval = setInterval(() => {
+                if (connected && socket && socket.connected) {
+                  socket.emit("ping", { time: Date.now() });
+                }
+              }, 15000);
+            }
+          } else {
+            // 页面显示时恢复心跳频率
+            if (heartbeatInterval) {
+              clearInterval(heartbeatInterval);
+              startHeartbeat();
+            }
+            // 如果显示时发现连接断开但之前是连接状态，尝试重连
+            if (!connected && serverBaseUrl && !raceActive) {
+              connectWebSocket();
+            }
+          }
+        });
+
         // 页面卸载时清理
         window.addEventListener("beforeunload", () => {
           if (syncInterval) clearInterval(syncInterval);
           if (heartbeatInterval) clearInterval(heartbeatInterval);
           if (reconnectTimer) clearTimeout(reconnectTimer);
-          if (scanTimer) clearInterval(scanTimer);
           if (socket) {
             socket.removeAllListeners();
             socket.disconnect();
-          }
-          if (mediaStream) {
-            mediaStream.getTracks().forEach((track) => track.stop());
           }
         });
       })();

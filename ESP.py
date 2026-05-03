@@ -5,12 +5,12 @@ ESP.py - 电子发令枪（后端统一时序中枢版）
 
 修改要点：
 1. 添加 WebSocket 客户端连接到 Flask 后端
-2. 按键4不再独立计时，而是通过 HTTP 通知后端记录发令时间
+2. 按键4不再独立计时而是通过 HTTP 通知后端记录发令时间
 3. 新增 fire_race() 函数，封装完整发令逻辑
 4. 新增 WebSocket 事件监听：
    - esp_start_race: 接收裁判长的发令指令，自动执行发令流程
    - esp_reset: 接收重置指令
-5. 按键4改为手动紧急发令（直接触发完整发令流程）
+5. 按键4改为手动紧急发令直接触发完整发令流程
 """
 
 import os
@@ -20,7 +20,6 @@ import pygame
 import threading
 import time
 import json
-import paho.mqtt.client as mqtt
 
 # 确保使用UTF-8编码
 if sys.stdout.encoding != 'utf-8':
@@ -249,14 +248,28 @@ class DeviceManager:
         self.broker = "localhost"
         self.port = 1883
         
+    def get_mqtt_client(self):
+        """按需获取 MQTT 客户端模块"""
+        try:
+            import paho.mqtt.client as mqtt_mod
+            return mqtt_mod
+        except ImportError:
+            print("[设备管理] 错误: 未安装 paho-mqtt 库，无法使用 MQTT 功能")
+            print("[设备管理] 请运行: pip install paho-mqtt")
+            return None
+
     def add_device(self, device_id):
         """添加设备"""
         if device_id in self.devices:
             print(f"[设备管理] 设备 {device_id} 已存在")
             return False
             
+        mqtt_mod = self.get_mqtt_client()
+        if not mqtt_mod:
+            return False
+
         try:
-            client = mqtt.Client(client_id=device_id)
+            client = mqtt_mod.Client(client_id=device_id)
             client.connect(self.broker, self.port, 60)
             client.loop_start()
             self.devices[device_id] = client
