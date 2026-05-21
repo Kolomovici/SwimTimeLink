@@ -137,6 +137,13 @@
         margin-top: 8px;
         display: none;
       }
+      .success-message {
+        color: #27ae60;
+        font-size: 0.9rem;
+        text-align: center;
+        margin-top: 8px;
+        display: none;
+      }
 
       /* 手动连接界面 */
       .connect-panel {
@@ -201,6 +208,23 @@
         cursor: not-allowed;
         transform: none;
       }
+      .ip-display {
+        background: #0d2a3e;
+        border-radius: 16px;
+        padding: 12px;
+        margin-bottom: 15px;
+        text-align: center;
+      }
+      .ip-display .label {
+        font-size: 12px;
+        opacity: 0.7;
+      }
+      .ip-display .value {
+        font-size: 18px;
+        font-weight: bold;
+        font-family: monospace;
+        word-break: break-all;
+      }
     </style>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
   </head>
@@ -213,16 +237,43 @@
         </div>
       </div>
       <div class="main-card">
-        <!-- 连接面板 -->
+        <!-- 手动连接面板（默认显示） -->
         <div class="connect-panel" id="connectPanel">
           <h3>🔗 连接服务器</h3>
-          <input type="text" id="serverAddr" placeholder="服务器地址 (IP或域名)" value="localhost" />
+
+          <!-- 显示当前页面地址提示 -->
+          <div class="ip-display" id="ipHint">
+            <div class="label">📡 当前页面地址</div>
+            <div class="value" id="currentPageUrl">检测中...</div>
+          </div>
+
+          <input
+            type="text"
+            id="serverAddr"
+            placeholder="服务器地址 (IP或域名)"
+            value="10.65.227.111"
+          />
           <div class="input-row">
-            <input type="text" id="serverPort" placeholder="端口" value="5000" />
-            <input type="number" id="laneInput" placeholder="泳道 (1-8)" min="1" max="8" />
+            <input
+              type="text"
+              id="serverPort"
+              placeholder="端口"
+              value="5000"
+            />
+            <input
+              type="number"
+              id="laneInput"
+              placeholder="泳道 (1-8)"
+              min="1"
+              max="8"
+            />
           </div>
           <button class="connect-btn" id="connectBtn">🔌 连接</button>
-          <div id="connError" class="error-message" style="color: #ff6b6b;"></div>
+          <div
+            id="connError"
+            class="error-message"
+            style="color: #ff6b6b"
+          ></div>
         </div>
 
         <div class="info-panel">
@@ -264,7 +315,7 @@
         const serverPort = document.getElementById("serverPort");
         const laneInput = document.getElementById("laneInput");
         const connectBtn = document.getElementById("connectBtn");
-        const connectPanel = document.getElementById("connectPanel");
+        const currentPageUrl = document.getElementById("currentPageUrl");
 
         // ==================== 全局变量 ====================
         let socket = null;
@@ -284,21 +335,30 @@
         let serverBaseUrl = "";
         let currentLane = null;
 
-        // 尝试从 localStorage 恢复上次的连接
-        const lastServer = localStorage.getItem("judge_lastServer");
-        const lastLane = localStorage.getItem("judge_lastLane");
-        if (lastServer) {
-          const parts = lastServer.split(":");
-          if (parts.length === 2) {
-            serverAddr.value = parts[0];
-            serverPort.value = parts[1];
-          }
+        // 显示当前页面地址
+        currentPageUrl.textContent = window.location.host;
+
+        // 自动从当前页面地址提取服务器地址
+        const currentHost = window.location.hostname;
+        const currentPort = window.location.port;
+        if (
+          currentHost &&
+          currentHost !== "localhost" &&
+          currentHost !== "127.0.0.1"
+        ) {
+          serverAddr.value = currentHost;
         }
+        if (currentPort) {
+          serverPort.value = currentPort;
+        }
+
+        // 尝试从 localStorage 恢复上次的泳道
+        const lastLane = localStorage.getItem("judge_lastLane");
         if (lastLane) {
           laneInput.value = lastLane;
         }
 
-                // ==================== 连接服务器 ====================
+        // ==================== 连接服务器 ====================
         function connectToServer() {
           const addr = serverAddr.value.trim();
           const port = serverPort.value.trim();
@@ -306,9 +366,21 @@
 
           connError.style.display = "none";
           connError.innerText = "";
-          if (!addr) { connError.innerText = "请输入服务器地址"; connError.style.display = "block"; return; }
-          if (!port) { connError.innerText = "请输入端口号"; connError.style.display = "block"; return; }
-          if (!lane || lane < 1 || lane > 8) { connError.innerText = "请输入有效的泳道号 (1-8)"; connError.style.display = "block"; return; }
+          if (!addr) {
+            connError.innerText = "请输入服务器地址";
+            connError.style.display = "block";
+            return;
+          }
+          if (!port) {
+            connError.innerText = "请输入端口号";
+            connError.style.display = "block";
+            return;
+          }
+          if (!lane || lane < 1 || lane > 8) {
+            connError.innerText = "请输入有效的泳道号 (1-8)";
+            connError.style.display = "block";
+            return;
+          }
 
           connectBtn.disabled = true;
           connectBtn.innerText = "⏳ 连接中...";
@@ -316,34 +388,24 @@
           serverBaseUrl = `http://${addr}:${port}`;
           currentLane = lane;
           laneDisplay.innerText = currentLane;
-          serverDisplaySpan.innerText = serverBaseUrl.replace(/^https?:\/\//, "");
+          serverDisplaySpan.innerText = serverBaseUrl.replace(
+            /^https?:\/\//,
+            "",
+          );
 
           // 保存到本地存储
-          localStorage.setItem("judge_lastServer", `${addr}:${port}`);
           localStorage.setItem("judge_lastLane", lane.toString());
 
-          // 第一步：测试HTTP连接（使用 GET 和 POST 双重尝试）
+          // 第一步：测试HTTP连接
           const testSync = async () => {
-            // 先尝试 GET（简单连通性测试）
-            try {
-              const getRes = await fetch(`${serverBaseUrl}/sync`, {
-                method: "GET",
-                signal: AbortSignal.timeout(3000)
-              });
-              if (getRes.ok) return true;
-            } catch (e) {
-              // GET 失败不着急，继续尝试 POST
-            }
-            
-            // 再尝试 POST（完整时间同步）
             const postRes = await fetch(`${serverBaseUrl}/sync`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ 
+              body: JSON.stringify({
                 lane: currentLane,
-                client_time: Date.now() 
+                client_time: Date.now(),
               }),
-              signal: AbortSignal.timeout(5000)
+              signal: AbortSignal.timeout(5000),
             });
             if (!postRes.ok) throw new Error(`HTTP ${postRes.status}`);
             const data = await postRes.json();
@@ -356,21 +418,19 @@
               // HTTP连接成功 → 建立WebSocket
               connectWebSocket();
               startSync();
-              connectPanel.style.display = "none";
               connLed.className = "connection-led online";
               eventNameEl.innerText = "已连接";
               raceStatusEl.innerText = "⏳ 等待发令";
-              showConnSuccess();
+              connectBtn.disabled = false;
+              connectBtn.innerText = "🔌 连接";
+              showMessage("连接成功", "success");
             })
             .catch((err) => {
               let errorMsg = err.message;
-              // 提供更友好的错误提示
               if (err.name === "TimeoutError" || err.name === "AbortError") {
-                errorMsg = "连接超时，请检查：\n1. 服务器是否已启动\n2. 地址和端口是否正确\n3. 防火墙是否放行";
-              } else if (err.message.includes("Failed to fetch") || err.message.includes("NetworkError")) {
-                errorMsg = "无法连接到服务器，请检查：\n1. 服务器是否正在运行\n2. IP地址是否正确\n3. 网络是否连通";
-              } else if (err.message.includes("HTTP 404")) {
-                errorMsg = "服务器路径错误，请检查端口号";
+                errorMsg = "连接超时，请检查服务器是否启动";
+              } else if (err.message.includes("Failed to fetch")) {
+                errorMsg = "无法连接到服务器，请检查IP和端口";
               }
               connError.innerText = "连接失败: " + errorMsg;
               connError.style.display = "block";
@@ -378,19 +438,23 @@
               currentLane = null;
               laneDisplay.innerText = "-";
               serverDisplaySpan.innerText = "--";
-            })
-            .finally(() => {
               connectBtn.disabled = false;
               connectBtn.innerText = "🔌 连接";
             });
         }
 
-        function showConnSuccess() {
-          connError.style.display = "none";
-          connError.innerText = "";
+        function showMessage(msg, type) {
+          const msgDiv = document.createElement("div");
+          msgDiv.className =
+            type === "success" ? "success-message" : "error-message";
+          msgDiv.innerText = msg;
+          msgDiv.style.display = "block";
+          msgDiv.style.marginTop = "10px";
+          document.querySelector(".main-card").appendChild(msgDiv);
+          setTimeout(() => msgDiv.remove(), 3000);
         }
 
-                // ==================== 时间同步 ====================
+        // ==================== 时间同步 ====================
         async function syncTime() {
           if (!serverBaseUrl) return null;
 
@@ -399,13 +463,12 @@
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-            // 发送客户端时间用于更精确的 RTT 计算
             const res = await fetch(`${serverBaseUrl}/sync`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ 
+              body: JSON.stringify({
                 lane: currentLane,
-                client_time: Date.now()   // 发送客户端时间戳
+                client_time: Date.now(),
               }),
               signal: controller.signal,
             });
@@ -421,7 +484,6 @@
 
             const serverTime = data.server_time;
             const RTT = T4 - T1;
-            // 更精确的时钟偏移计算
             const offset = serverTime - (T1 + RTT / 2);
             clockOffset = offset;
 
@@ -441,11 +503,7 @@
             return offset;
           } catch (e) {
             console.warn("时间同步失败", e);
-            if (e.name === "AbortError" || e.name === "TimeoutError") {
-              offsetDisplay.innerText = "超时";
-            } else {
-              offsetDisplay.innerText = "失败";
-            }
+            offsetDisplay.innerText = "失败";
             offsetDisplay.style.color = "red";
             syncError.innerText = "时间同步失败，成绩可能不准确";
             syncError.style.display = "block";
@@ -453,7 +511,7 @@
           }
         }
 
-                function startSync(interval = 5000) {
+        function startSync(interval = 5000) {
           syncTime();
           if (syncInterval) clearInterval(syncInterval);
           syncInterval = setInterval(() => {
@@ -461,7 +519,7 @@
           }, interval);
         }
 
-                // ==================== WebSocket连接管理 ====================
+        // ==================== WebSocket连接管理 ====================
         function setConnectionStatus(isConnected) {
           connected = isConnected;
           if (isConnected) {
@@ -470,8 +528,6 @@
             reconnectAttempts = 0;
             if (currentLane) {
               eventNameEl.innerText = "已连接 - 泳道" + currentLane;
-            } else {
-              eventNameEl.innerText = "等待发令";
             }
           } else {
             connLed.className = "connection-led";
@@ -479,14 +535,13 @@
           }
         }
 
-                function attemptReconnect() {
+        function attemptReconnect() {
           if (reconnectTimer) clearTimeout(reconnectTimer);
           if (reconnectAttempts < maxReconnectAttempts) {
             reconnectAttempts++;
-            const delay = Math.min(3000 * reconnectAttempts, 10000); // 最多10秒
+            const delay = Math.min(3000 * reconnectAttempts, 10000);
             networkWarning.innerText = `🔄 正在重连 (${reconnectAttempts}/${maxReconnectAttempts})...`;
             networkWarning.style.display = "block";
-            console.log(`将在 ${delay/1000} 秒后尝试重连...`);
             reconnectTimer = setTimeout(() => {
               if (!connected && serverBaseUrl) {
                 console.log("尝试重新连接 WebSocket...");
@@ -494,14 +549,12 @@
               }
             }, delay);
           } else {
-            networkWarning.innerText = "❌ 连接已断开，请点击「连接」按钮重新连接";
+            networkWarning.innerText = "❌ 连接已断开，请重新连接";
             networkWarning.style.display = "block";
-            // 显示连接面板让用户手动重连
-            connectPanel.style.display = "block";
           }
         }
 
-                function startHeartbeat() {
+        function startHeartbeat() {
           if (heartbeatInterval) clearInterval(heartbeatInterval);
           lastHeartbeat = Date.now();
           heartbeatInterval = setInterval(() => {
@@ -514,8 +567,7 @@
               setConnectionStatus(false);
               attemptReconnect();
             }
-            // 检查心跳超时
-            if (connected && (now - lastHeartbeat > 15000)) {
+            if (connected && now - lastHeartbeat > 15000) {
               networkWarning.innerText = "⚠️ 网络延迟较高，请检查连接";
               networkWarning.style.display = "block";
             } else if (connected) {
@@ -524,7 +576,7 @@
           }, 5000);
         }
 
-                function connectWebSocket() {
+        function connectWebSocket() {
           if (!serverBaseUrl) return;
           if (socket) {
             socket.removeAllListeners();
@@ -533,24 +585,18 @@
           }
 
           try {
-            // 使用完整 URL 构造 WebSocket 连接
-            // 注意：io() 会自动处理 http→ws 协议转换
-            const wsUrl = serverBaseUrl;  // e.g. "http://192.168.1.100:5000"
-
-            console.log(`正在连接 WebSocket: ${wsUrl}`);
-            socket = io(wsUrl, {
-              transports: ["websocket", "polling"],  // polling 作为降级方案
-              reconnection: false,                   // 我们手动处理重连
-              timeout: 15000,                        // 15秒超时
+            console.log(`正在连接 WebSocket: ${serverBaseUrl}`);
+            socket = io(serverBaseUrl, {
+              transports: ["websocket", "polling"],
+              reconnection: false,
+              timeout: 15000,
               forceNew: true,
-              closeOnBeforeunload: true,
             });
 
             socket.on("connect", () => {
               console.log("✅ WebSocket 已连接");
               setConnectionStatus(true);
               startHeartbeat();
-              // 注册当前泳道
               socket.emit("register_judge", {
                 lane: currentLane,
                 device_info: { userAgent: navigator.userAgent },
@@ -566,20 +612,10 @@
             socket.on("connect_error", (error) => {
               console.error("❌ WebSocket 连接错误:", error.message);
               setConnectionStatus(false);
-              // 只在第一次连接失败时显示友好提示
-              if (!connected && !raceActive) {
-                networkWarning.innerText = `WebSocket连接失败: ${error.message}`;
-                networkWarning.style.display = "block";
-                // 5秒后自动隐藏
-                setTimeout(() => {
-                  if (!raceActive) networkWarning.style.display = "none";
-                }, 8000);
-              }
               if (raceActive) attemptReconnect();
             });
 
-            // ===== 业务事件 =====
-            // 监听发令信号
+            // 业务事件
             socket.on("race_start", (data) => {
               console.log("🏊 收到发令信号", data);
               raceActive = true;
@@ -595,23 +631,18 @@
               networkWarning.style.display = "none";
             });
 
-            // 心跳响应
             socket.on("pong", () => {
               lastHeartbeat = Date.now();
             });
 
-            // 注册确认
             socket.on("registration_confirm", (data) => {
               console.log("📋 注册确认:", data);
               if (data.status === "ok") {
                 eventNameEl.innerText = "已连接 - 泳道" + currentLane;
                 raceStatusEl.innerText = "⏳ 等待发令";
-              } else {
-                console.warn("注册被拒绝:", data.message);
               }
             });
 
-            // 比赛重置
             socket.on("race_reset", (data) => {
               console.log("🔄 比赛重置:", data);
               raceActive = false;
@@ -620,19 +651,12 @@
               totalLaps = 0;
               eventNameEl.innerText = "已连接";
               raceStatusEl.innerText = "⏳ 等待发令";
-              buttonContainer.innerHTML = '<div style="text-align: center; color: #666; grid-column: span 2">等待比赛开始</div>';
+              buttonContainer.innerHTML =
+                '<div style="text-align: center; color: #666; grid-column: span 2">等待比赛开始</div>';
             });
-
-            // 错误事件
-            socket.on("error", (error) => {
-              console.error("SocketIO 错误:", error);
-            });
-
           } catch (err) {
             console.error("创建WebSocket失败:", err);
             setConnectionStatus(false);
-            networkWarning.innerText = "无法创建WebSocket连接: " + err.message;
-            networkWarning.style.display = "block";
           }
         }
 
@@ -718,37 +742,11 @@
         }
         setInterval(updateClock, 500);
 
-        // 连接按钮事件
+        // ==================== 事件绑定 ====================
         connectBtn.addEventListener("click", connectToServer);
 
-        // 回车键触发连接
         laneInput.addEventListener("keydown", (e) => {
           if (e.key === "Enter") connectToServer();
-        });
-
-                // 页面可见性变化时处理（切换到后台/前台）
-        document.addEventListener("visibilitychange", () => {
-          if (document.hidden) {
-            // 页面隐藏时，降低心跳频率
-            if (heartbeatInterval) {
-              clearInterval(heartbeatInterval);
-              heartbeatInterval = setInterval(() => {
-                if (connected && socket && socket.connected) {
-                  socket.emit("ping", { time: Date.now() });
-                }
-              }, 15000);
-            }
-          } else {
-            // 页面显示时恢复心跳频率
-            if (heartbeatInterval) {
-              clearInterval(heartbeatInterval);
-              startHeartbeat();
-            }
-            // 如果显示时发现连接断开但之前是连接状态，尝试重连
-            if (!connected && serverBaseUrl && !raceActive) {
-              connectWebSocket();
-            }
-          }
         });
 
         // 页面卸载时清理

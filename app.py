@@ -12,6 +12,9 @@ from datetime import datetime
 from collections import defaultdict
 import subprocess
 import sys
+import socket
+import qrcode
+from io import BytesIO
 
 app = Flask(__name__)
 
@@ -30,6 +33,18 @@ socketio = SocketIO(
 
 # ==================== 计时器进程管理 ====================
 timer_process = None
+
+def get_local_ip():
+    """获取本机局域网 IP 地址"""
+    try:
+        # 创建一个连接外部网络的 socket（不会实际发送数据）
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
 
 def start_timer_script():
     """启动ESP.py计时器脚本"""
@@ -185,6 +200,56 @@ def sync_time():
             "message": "服务器运行正常"
         })
 
+@app.route('/qrcode')
+def generate_qrcode():
+    """生成连接二维码"""
+    # 获取本机 IP
+    local_ip = get_local_ip()
+    
+    # 获取端口（从请求中获取，默认为5000）
+    port = request.host.split(':')[-1] if ':' in request.host else '5000'
+    try:
+        port = int(port)
+    except:
+        port = 5000
+    
+    # 获取目标页面类型（裁判长端或裁判端）
+    page = request.args.get('page', 'judgment')
+    
+    if page == 'head':
+        target_url = f"http://{local_ip}:{port}/"
+    else:
+        target_url = f"http://{local_ip}:{port}/judgment"
+    
+    # 生成二维码
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(target_url)
+    qr.make(fit=True)
+    
+    img = qr.make_image(fill_color="black", back_color="white")
+    
+    # 保存到 BytesIO
+    img_io = BytesIO()
+    img.save(img_io, 'PNG')
+    img_io.seek(0)
+    
+    return send_file(img_io, mimetype='image/png')
+
+@app.route('/server_info')
+def server_info():
+    """返回服务器信息"""
+    return jsonify({
+        "local_ip": get_local_ip(),
+        "port": 5000,
+        "judgment_url": f"http://{get_local_ip()}:5000/judgment",
+        "head_url": f"http://{get_local_ip()}:5000/"
+    })
+
 @app.route('/register_participant', methods=['POST'])
 def register_participant():
     """注册参赛选手"""
@@ -267,11 +332,7 @@ def start_race():
 
 @app.route('/esp_fire', methods=['POST'])
 def esp_fire():
-    """
-    【ESP发令枪按下——真正的发令时刻】
-    ESP.py播放电笛声的同时，调用此接口通知后端记录 start_time
-    这才是所有裁判终端应该使用的发令时间基准
-    """
+    """【ESP发令枪按下——真正的发令时刻】"""
     global current_race
     data = request.get_json()
     project_name = data.get('project_name', current_race['project_name'])
@@ -607,11 +668,16 @@ if __name__ == '__main__':
     print("=" * 60)
     print("裁判长控制台: http://localhost:5000")
     print("裁判手机端: http://localhost:5000/judgment")
+    local_ip = get_local_ip()
+    if local_ip != "127.0.0.1":
+        print(f"\n局域网访问地址:")
+        print(f"  裁判长控制台: http://{local_ip}:5000")
+        print(f"  裁判手机端: http://{local_ip}:5000/judgment")
     print("=" * 60)
     print("按 Ctrl+C 停止服务器")
     print("=" * 60)
     
-        # 启动计时器脚本
+    # 启动计时器脚本
     print("\n[初始化] 正在启动计时器脚本...")
     start_timer_script()
     
