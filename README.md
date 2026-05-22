@@ -1,4 +1,5 @@
-<img width="1642" height="641" alt="dc45b876c51f7e5e64d0f83d9be2da4a" src="https://github.com/user-attachments/assets/9c579d83-217e-4fab-94cd-0c92f9bf49f2" />
+<img width="1635" height="658" alt="e5130a438af568592dbfc70b84c9e21f" src="https://github.com/user-attachments/assets/51f99c00-19d0-4285-b211-628913f1d0a1" />
+
 
 
 **Apologies**: Due to the "China University Swimming Championship Finals", the development team is unable to be on-site to support the Hunan University Swimming League. However, we have persisted in completing this project! Special thanks to the NJAU (Nanjing Agricultural University) front-end team for their support! Looking forward to meeting you at the China University Swimming Championship in Ordos!
