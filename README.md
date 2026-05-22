@@ -14,28 +14,7 @@ This project is an electronic starting and timing system designed for swimming c
 
 ## System Architecture
 
-## 系统架构
-
-┌─────────────────────────────────────────────────────────────┐
-│           Flask Backend (Referee UI) / Flask 后端 (裁判长界面)    │
-│  WebSocket sends `esp_start_race` / `esp_reset`              │
-│  (WebSocket 发送 `esp_start_race` / `esp_reset` 指令)         │
-└───────────────────────────┬─────────────────────────────────┘
-                            │ WebSocket / HTTP
-┌───────────────────────────▼─────────────────────────────────┐
-│              ESP.py (Electronic Starting Gun) / 电子发令枪     │
-│  - Keyboard listening (音效控制、设备管理、计时器控制)           │
-│  - WebSocket receives referee commands (接收裁判长指令)        │
-│  - Sound playback (pygame) / 音效播放                         │
-│  - MQTT device management (add/remove/control) / 设备管理     │
-│  - Local timing window (timer_window) / 本地计时窗口          │
-└───────┬───────────────────┬───────────────────┬─────────────┘
-        │                   │                   │
-        ▼                   ▼                   ▼
-   MQTT Devices       data_manager.py        sound/ folder
-   (计时板等)         (JSON file storage)    (WAV 格式)
-                      (JSON 文件存储)        音效文件夹
-```
+<img width="1280" height="719" alt="22ef454159ba8f5ec18295d6d0494e70_720" src="https://github.com/user-attachments/assets/7f88f1d2-f64e-4dca-adc7-7c2e0d88c1ba" />
 
 ## Requirements
 
