@@ -630,6 +630,7 @@ config.load_from_yaml("config.yaml")        # 加载配置
 
 ### 参与名单
 Kolomovici(backend) 湖南大学物理与微电子科学学院
+
 ssrszyrf(web)南京农业大学园艺学院
 
 ---
